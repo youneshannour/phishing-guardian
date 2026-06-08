@@ -1,0 +1,487 @@
+/* ========== FONTS ========== */
+.font-share-tech {
+  font-family: 'Share Tech Mono', monospace;
+}
+
+.font-orbitron {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 900;
+}
+
+/* ========== BASE ========== */
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: #000;
+  color: #00ff00;
+  font-family: 'Share Tech Mono', monospace;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* ========== MATRIX BACKGROUND ========== */
+#matrixCanvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* ========== GRID OVERLAY ========== */
+.grid-overlay {
+  background-image: 
+    linear-gradient(rgba(0, 255, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 0, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+}
+
+/* ========== SCAN LINES ========== */
+.scanlines {
+  background: linear-gradient(
+    transparent 50%,
+    rgba(0, 255, 0, 0.03) 50%
+  );
+  background-size: 100% 4px;
+  animation: scanlines 8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes scanlines {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(4px); }
+}
+
+/* ========== TEXT GLOW ========== */
+.text-glow {
+  text-shadow: 
+    0 0 10px rgba(0, 255, 0, 0.8),
+    0 0 20px rgba(0, 255, 0, 0.4),
+    0 0 30px rgba(0, 255, 0, 0.2);
+}
+
+/* ========== ANIMATIONS ========== */
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(0, 255, 0, 0.8), 0 0 60px rgba(0, 255, 0, 0.4);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.cursor-blink {
+  animation: blink 1s infinite;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.typing-text {
+  display: inline-block;
+  overflow: hidden;
+  border-right: 2px solid #00ff00;
+  white-space: nowrap;
+  animation: typing 1.5s steps(30, end), blink-cursor 0.75s step-end infinite;
+}
+
+.typing-text-delay {
+  display: inline-block;
+  overflow: hidden;
+  border-right: 2px solid #00ff00;
+  white-space: nowrap;
+  animation: typing 1.5s steps(30, end) 0.5s both, blink-cursor 0.75s step-end infinite;
+}
+
+@keyframes typing {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+@keyframes blink-cursor {
+  from, to { border-color: transparent; }
+  50% { border-color: #00ff00; }
+}
+
+/* ========== CARDS ========== */
+.card-hacking {
+  background: rgba(0, 0, 0, 0.85);
+  border: 2px solid #00ff00;
+  box-shadow: 
+    0 0 20px rgba(0, 255, 0, 0.2),
+    inset 0 0 20px rgba(0, 255, 0, 0.05);
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.card-hacking::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 255, 0, 0.1),
+    transparent
+  );
+  animation: scan 4s infinite;
+}
+
+@keyframes scan {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.card-hacking:hover {
+  border-color: #00ff88;
+  box-shadow: 
+    0 0 30px rgba(0, 255, 0, 0.4),
+    inset 0 0 30px rgba(0, 255, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.card-header {
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  color: #00ff00;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(0, 255, 0, 0.3);
+  padding-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ========== INPUTS ========== */
+.input-hacking {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid #00ff00;
+  color: #00ff00;
+  padding: 0.875rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.875rem;
+  outline: none;
+  transition: all 0.3s ease;
+  resize: none;
+}
+
+.input-hacking:focus {
+  border-color: #00ff88;
+  box-shadow: 
+    0 0 15px rgba(0, 255, 0, 0.3),
+    inset 0 0 15px rgba(0, 255, 0, 0.1);
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.input-hacking::placeholder {
+  color: #00aa00;
+  opacity: 0.6;
+}
+
+/* ========== BUTTONS ========== */
+.btn-hacking {
+  background: rgba(0, 255, 0, 0.1);
+  border: 2px solid #00ff00;
+  color: #00ff00;
+  padding: 0.875rem 1.5rem;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+}
+
+.btn-hacking::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 255, 0, 0.2);
+  transition: left 0.3s ease;
+}
+
+.btn-hacking:hover::before {
+  left: 100%;
+}
+
+.btn-hacking:hover {
+  background: rgba(0, 255, 0, 0.2);
+  border-color: #00ff88;
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.5);
+  transform: translateY(-2px);
+}
+
+.btn-hacking:active {
+  transform: translateY(0);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+}
+
+.btn-hacking:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ========== TABS ========== */
+.tab-hacking {
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid transparent;
+  border-bottom: none;
+  color: #00aa00;
+  padding: 0.875rem 1.5rem;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tab-hacking::before {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: #00ff00;
+  transition: width 0.3s ease;
+}
+
+.tab-hacking:hover {
+  color: #00ff00;
+  background: rgba(0, 255, 0, 0.05);
+  border-color: rgba(0, 255, 0, 0.3);
+}
+
+.tab-hacking.active {
+  color: #00ff00;
+  border-color: #00ff00;
+  background: rgba(0, 255, 0, 0.1);
+  box-shadow: 0 -5px 15px rgba(0, 255, 0, 0.2);
+}
+
+.tab-hacking.active::before {
+  width: 100%;
+}
+
+/* ========== PANELS ========== */
+.panel-hacking {
+  animation: fade-in-hack 0.5s ease-out;
+  min-height: 500px;
+}
+
+.panel-hacking.hidden {
+  display: none !important;
+}
+
+@keyframes fade-in-hack {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========== TERMINAL ========== */
+.terminal-prompt {
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid #00ff00;
+  box-shadow: 
+    0 0 30px rgba(0, 255, 0, 0.3),
+    inset 0 0 30px rgba(0, 255, 0, 0.05);
+  font-family: 'Share Tech Mono', monospace;
+  position: relative;
+  padding: 1.5rem;
+}
+
+.terminal-prompt::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #00ff00,
+    transparent
+  );
+  animation: terminal-scan 3s infinite;
+}
+
+@keyframes terminal-scan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ========== RESULTS ========== */
+.result-hacking {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(0, 255, 0, 0.3);
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  animation: result-appear 0.3s ease-out;
+  transition: all 0.3s ease;
+}
+
+@keyframes result-appear {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.result-hacking:hover {
+  border-color: #00ff00;
+  background: rgba(0, 255, 0, 0.05);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.2);
+}
+
+/* ========== RISK BADGES ========== */
+.risk-critique {
+  border: 2px solid #ff0000;
+  color: #ff0000;
+  background: rgba(255, 0, 0, 0.1);
+  animation: danger-pulse 1s infinite;
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.risk-eleve {
+  border: 2px solid #ff8800;
+  color: #ff8800;
+  background: rgba(255, 136, 0, 0.1);
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.risk-modere {
+  border: 2px solid #ffaa00;
+  color: #ffaa00;
+  background: rgba(255, 170, 0, 0.1);
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.risk-faible {
+  border: 2px solid #00ff00;
+  color: #00ff00;
+  background: rgba(0, 255, 0, 0.1);
+  padding: 0.75rem 1.5rem;
+  border-radius: 4px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+@keyframes danger-pulse {
+  0%, 100% {
+    box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+  }
+}
+
+/* ========== SCROLLBAR ========== */
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000;
+  border: 1px solid rgba(0, 255, 0, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 0, 0.3);
+  border: 1px solid rgba(0, 255, 0, 0.5);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 255, 0, 0.5);
+}
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+  .tab-hacking {
+    font-size: 0.65rem;
+    padding: 0.625rem 1rem;
+  }
+  
+  .card-hacking {
+    padding: 1rem;
+  }
+  
+  h1 {
+    font-size: 1.5rem;
+  }
+}

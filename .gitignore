@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Environnement
+.env
+.env.local
+
+# Artifacts ML
+artifacts/
+*.joblib
+*.pkl
+
+# Données
+data/
+*.csv
+temp/
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Projet phishing_guardian
+phishing_guardian/venv/
+phishing_guardian/temp/
+phishing_guardian/skiptracer_repo/
+phishing_guardian/exiftool/
+phishing_guardian/TEST.txt
+

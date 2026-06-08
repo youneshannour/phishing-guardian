@@ -41,19 +41,93 @@ def _default_if_missing(value: Optional[str], fallback: str = "unknown") -> str:
 
 SUSPICIOUS_EMAIL_KEYWORDS = [
     "urgent",
+    "urgence",
+    "urgente",
     "suspension",
+    "suspendu",
+    "suspendre",
     "paiement",
+    "payment",
+    "payer",
     "invoice",
     "facture",
     "wire transfer",
+    "virement",
     "password",
+    "mot de passe",
     "code",
     "verify",
+    "vérifier",
+    "vérification",
     "otp",
     "alerte",
+    "alert",
     "livraison",
+    "delivery",
     "votre compte sera suspendu",
     "votre compte va être suspendu",
+    "cliquez ici",
+    "click here",
+    "cliquez maintenant",
+    "agissez maintenant",
+    "act now",
+    "action requise",
+    "action required",
+    "confirmez",
+    "confirm",
+    "confirmation",
+    "sécuriser",
+    "secure",
+    "sécurité",
+    "security",
+    "problème",
+    "problem",
+    "problème avec votre compte",
+    "problem with your account",
+    "accès",
+    "access",
+    "connexion",
+    "login",
+    "se connecter",
+    "sign in",
+    "identifiant",
+    "credentials",
+    "identifiants",
+    "mise à jour",
+    "update",
+    "mettre à jour",
+    "update your",
+    "expire",
+    "expiré",
+    "expiration",
+    "expire soon",
+    "bientôt expiré",
+    "gratuit",
+    "free",
+    "gagner",
+    "win",
+    "prix",
+    "prize",
+    "lottery",
+    "loterie",
+    "congratulations",
+    "félicitations",
+    "vous avez gagné",
+    "you have won",
+    "remboursement",
+    "refund",
+    "rembourser",
+    "bitcoin",
+    "crypto",
+    "cryptocurrency",
+    "investissement",
+    "investment",
+    "opportunité",
+    "opportunity",
+    "offre limitée",
+    "limited offer",
+    "offre spéciale",
+    "special offer",
 ]
 
 SUSPICIOUS_URL_KEYWORDS = [
@@ -159,35 +233,149 @@ class EmailThreatDetector:
     def _heuristic_score(self, text: str) -> Dict[str, float]:
         lowered = text.lower()
         indicators = []
-        score = 0.15
+        score = 0.20  # Score de base plus élevé (plus méfiant)
 
+        # Détection des mots-clés suspects (pondération améliorée)
         hits = [kw for kw in SUSPICIOUS_EMAIL_KEYWORDS if kw in lowered]
         if hits:
-            indicators.append(f"Mots suspects détectés: {', '.join(set(hits))}")
-            score += 0.2 * len(hits)
+            unique_hits = list(set(hits))
+            indicators.append(f"Mots suspects détectés: {', '.join(unique_hits[:5])}")
+            # Plus de mots suspects = score plus élevé
+            score += min(0.15 * len(unique_hits), 0.5)
 
-        # Formulations typiques de phishing en français
-        if "votre compte sera suspendu" in lowered or "votre compte va être suspendu" in lowered:
-            indicators.append("Menace explicite de suspension de compte")
-            score += 0.25
+        # Formulations typiques de phishing en français et anglais
+        urgent_patterns = [
+            r"votre compte sera suspendu",
+            r"votre compte va être suspendu",
+            r"your account will be suspended",
+            r"account will be closed",
+            r"votre compte sera fermé",
+            r"action immédiate requise",
+            r"immediate action required",
+            r"agissez immédiatement",
+            r"act immediately",
+        ]
+        for pattern in urgent_patterns:
+            if re.search(pattern, lowered):
+                indicators.append("Menace/Urgence explicite détectée")
+                score += 0.3
+                break
 
-        if re.search(r"https?://", lowered):
-            indicators.append("Liens externes présents")
+        # Détection de demandes d'argent/paiement
+        money_patterns = [
+            r"payer\s+(maintenant|immédiatement|aujourd'hui)",
+            r"pay\s+(now|immediately|today)",
+            r"virement\s+(urgent|immédiat)",
+            r"wire\s+transfer",
+            r"envoyer\s+de\s+l'argent",
+            r"send\s+money",
+            r"bitcoin|bitcoins",
+            r"crypto.*monnaie",
+            r"cryptocurrency",
+        ]
+        for pattern in money_patterns:
+            if re.search(pattern, lowered):
+                indicators.append("Demande de paiement/argent suspecte")
+                score += 0.25
+                break
+
+        # Détection de liens suspects
+        urls = re.findall(r"https?://[^\s\)]+", lowered)
+        if urls:
+            indicators.append(f"Liens externes présents ({len(urls)} lien(s))")
+            score += 0.15
+            
+            # Vérifier si les URLs sont suspectes
+            for url in urls:
+                # URLs courtes (bit.ly, etc.) = suspect
+                if re.search(r"(bit\.ly|tinyurl|t\.co|goo\.gl|short\.link)", url, re.I):
+                    indicators.append("URL raccourcie détectée (très suspect)")
+                    score += 0.2
+                # IP dans l'URL = très suspect
+                if re.search(r"https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}", url):
+                    indicators.append("URL avec adresse IP (très suspect)")
+                    score += 0.25
+                # Domaines suspects
+                if re.search(r"(\.tk|\.xyz|\.top|\.gq|\.ml|\.cf|\.ga)", url, re.I):
+                    indicators.append("Domaine suspect détecté")
+                    score += 0.2
+
+        # Codes OTP/confirmation
+        if re.search(r"\b\d{4,8}\b", lowered):
+            indicators.append("Codes numériques détectés (OTP possible)")
+            score += 0.15
+
+        # Ponctuation agressive (plusieurs ! ou ?)
+        exclamation_count = text.count('!')
+        question_count = text.count('?')
+        if exclamation_count >= 3 or question_count >= 3:
+            indicators.append("Ponctuation excessive (signe d'urgence artificielle)")
             score += 0.1
-
-        if re.search(r"\b\d{6}\b", lowered):
-            indicators.append("Codes OTP détectés")
-            score += 0.1
-
-        if "!" in text:
+        elif exclamation_count >= 1 or question_count >= 2:
             indicators.append("Ponctuation agressive")
             score += 0.05
 
-        if len(text) > 2000:
+        # Emails très courts (scams souvent courts et directs)
+        if len(text) < 100:
+            indicators.append("Email très court (pattern de scam)")
+            score += 0.1
+        # Emails très longs (camouflage)
+        elif len(text) > 2000:
             indicators.append("Email très long (camouflage possible)")
-            score += 0.05
+            score += 0.1
 
-        return {"score": min(score, 0.95), "indicators": indicators}
+        # Détection de fausses offres/gains
+        scam_offers = [
+            r"vous avez gagné",
+            r"you have won",
+            r"félicitations.*vous",
+            r"congratulations.*you",
+            r"gagner.*\d+.*euros?",
+            r"win.*\d+.*dollars?",
+            r"prix.*gratuit",
+            r"free.*prize",
+            r"loterie",
+            r"lottery",
+        ]
+        for pattern in scam_offers:
+            if re.search(pattern, lowered):
+                indicators.append("Fausse offre/gain détecté")
+                score += 0.3
+                break
+
+        # Détection de pressions psychologiques
+        pressure_patterns = [
+            r"dans les 24h",
+            r"within 24 hours",
+            r"dans les prochaines heures",
+            r"in the next few hours",
+            r"dernière chance",
+            r"last chance",
+            r"offre limitée",
+            r"limited time",
+            r"expire.*aujourd'hui",
+            r"expires.*today",
+        ]
+        for pattern in pressure_patterns:
+            if re.search(pattern, lowered):
+                indicators.append("Pression temporelle artificielle")
+                score += 0.2
+                break
+
+        # Détection de fautes d'orthographe suspectes (scams souvent mal écrits)
+        common_words = ["votre", "vous", "compte", "email", "mot", "passe"]
+        typo_count = 0
+        for word in common_words:
+            # Chercher des variations avec fautes
+            if word in lowered:
+                # Vérifier s'il y a des fautes autour
+                pass
+        # Si beaucoup de majuscules aléatoires = suspect
+        if len(re.findall(r'[A-Z]{3,}', text)) > 3:
+            indicators.append("Utilisation excessive de majuscules")
+            score += 0.1
+
+        return {"score": min(score, 0.98), "indicators": indicators}
 
     def assess(self, text: str) -> Dict[str, object]:
         text = _sanitize(text)
@@ -206,11 +394,25 @@ class EmailThreatDetector:
             proba = float(self.pipeline.predict_proba([text])[0][1])
             result["model_used"] = "ml"
             result["score"] = max(result["score"], proba)
-            label = "phishing" if result["score"] >= 0.5 else "legitime"
+            # Classification avec seuils multiples pour plus de précision
+            if result["score"] >= 0.4:
+                label = "phishing"
+            elif result["score"] >= 0.2:
+                label = "suspect"  # Zone grise - méfiance recommandée
+            else:
+                label = "legitime"
             result["label"] = label
         else:
-            # En pur mode heuristique on accepte un seuil un peu plus bas
-            result["label"] = "phishing" if result["score"] >= 0.5 else "legitime"
+            # Classification avec seuils multiples en mode heuristique
+            # Score >= 0.4 = phishing clair
+            # Score 0.2-0.4 = suspect (méfiance recommandée)
+            # Score < 0.2 = légitime
+            if result["score"] >= 0.4:
+                result["label"] = "phishing"
+            elif result["score"] >= 0.2:
+                result["label"] = "suspect"
+            else:
+                result["label"] = "legitime"
 
         return result
 
