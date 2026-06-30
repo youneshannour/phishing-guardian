@@ -3,12 +3,14 @@ import subprocess
 import json
 import io
 import re
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, List, Optional
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Header
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import requests
@@ -30,12 +32,52 @@ from phishing_guardian import PhishingGuardian
 from osint_scanner import OSINTScanner
 from vulnerability_scanner import VulnerabilityScanner
 from advanced_vulnerability_scanner import AdvancedVulnerabilityScanner
+from services.playbook_engine import playbook_engine
+from services.ai_investigator import ai_investigator
+from services.graph_service import (
+    build_graph_from_investigation,
+    graph_to_cytoscape,
+    merge_graphs,
+    suggest_pivot_playbook,
+)
+from services.scoring_service import compute_attack_surface
+from services.privacy_service import compute_privacy_score
+from services.timeline_service import build_timeline
+from services.report_service import (
+    generate_pdf_bytes,
+    prepare_report_context,
+    report_status,
+    suggested_filename,
+)
+from services.watch_service import watch_service
+from services.workspace_service import workspace_service
+from plugins.osint.registry import list_plugins
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).parent
 
-app = FastAPI(title="Phishing Guardian - OSINT Platform")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    watch_service.start_scheduler()
+    yield
+    await watch_service.stop_scheduler()
+
+
+app = FastAPI(title="Phishing Guardian - OSINT Platform", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*", "X-PG-User"],
+)
+
+EXTENSION_DIR = BASE_DIR / "extension"
+if EXTENSION_DIR.is_dir():
+    app.mount("/extension", StaticFiles(directory=str(EXTENSION_DIR), html=True), name="extension")
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -92,6 +134,125 @@ class VulnerabilityRequest(BaseModel):
     ip: Optional[str] = None
     cve_list: Optional[List[str]] = None
     scan_type: Optional[str] = "stealth"  # stealth, full, quick
+
+
+class PlaybookRunRequest(BaseModel):
+    target: str
+    playbook_id: Optional[str] = None
+
+
+class AIChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class AIChatRequest(BaseModel):
+    message: str
+    history: Optional[List[AIChatMessage]] = None
+
+
+class AIInvestigateRequest(BaseModel):
+    message: str
+    playbook_id: Optional[str] = None
+
+
+class GraphFromInvestigationRequest(BaseModel):
+    investigation: dict
+
+
+class GraphPivotRequest(BaseModel):
+    target: str
+    entity_type: Optional[str] = None
+    playbook_id: Optional[str] = None
+    existing_graph: Optional[dict] = None
+
+
+class ScoreFromInvestigationRequest(BaseModel):
+    investigation: dict
+
+
+class PrivacyFromInvestigationRequest(BaseModel):
+    investigation: dict
+
+
+class TimelineFromInvestigationRequest(BaseModel):
+    investigation: dict
+
+
+class ReportFromInvestigationRequest(BaseModel):
+    investigation: dict
+
+
+class WatchCreateRequest(BaseModel):
+    target: str
+    playbook_id: Optional[str] = None
+    label: Optional[str] = None
+    interval_hours: Optional[int] = None
+    baseline_investigation: Optional[dict] = None
+
+
+class WatchUpdateRequest(BaseModel):
+    status: Optional[str] = None
+    label: Optional[str] = None
+    interval_hours: Optional[int] = None
+
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = ""
+
+
+class WorkspaceUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class WorkspaceMemberRequest(BaseModel):
+    username: str
+    role: Optional[str] = "analyst"
+
+
+class CaseCreateRequest(BaseModel):
+    title: str
+    description: Optional[str] = ""
+    priority: Optional[str] = "medium"
+    tags: Optional[List[str]] = None
+    investigation: Optional[dict] = None
+
+
+class CaseUpdateRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+
+class CaseAddInvestigationRequest(BaseModel):
+    investigation: dict
+
+
+class WorkspaceAddInvestigationRequest(BaseModel):
+    investigation: dict
+    case_id: Optional[str] = None
+    case_title: Optional[str] = None
+
+
+class NoteCreateRequest(BaseModel):
+    content: str
+    case_id: Optional[str] = None
+
+
+def _pg_user(x_pg_user: Optional[str] = Header(None, alias="X-PG-User")) -> str:
+    if not x_pg_user or not x_pg_user.strip():
+        raise HTTPException(
+            status_code=401,
+            detail="En-tête X-PG-User requis — définissez votre nom dans l'onglet Workspace",
+        )
+    try:
+        return workspace_service.normalize_username(x_pg_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ========== ROUTES ==========
@@ -1105,6 +1266,585 @@ async def api_vulnerabilities(payload: VulnerabilityRequest) -> Any:
         }
 
 
+@app.get("/api/playbooks")
+async def api_list_playbooks() -> Any:
+    """Liste des playbooks OSINT disponibles."""
+    playbooks = playbook_engine.list_playbooks()
+    plugins = [
+        {
+            "id": p.id,
+            "name": p.name,
+            "supported_types": [t.value for t in p.supported_types],
+            "available": p.is_available(),
+            "env_key": p.env_key,
+        }
+        for p in list_plugins()
+    ]
+    return {
+        "playbooks": [p.to_dict() for p in playbooks],
+        "plugins": plugins,
+    }
+
+
+@app.get("/api/playbooks/suggest")
+async def api_suggest_playbook(target: str) -> Any:
+    """Suggère un playbook selon le type de cible détecté."""
+    if not target.strip():
+        raise HTTPException(status_code=400, detail="Cible vide")
+    return playbook_engine.suggest(target.strip())
+
+
+@app.post("/api/playbooks/run")
+async def api_run_playbook(payload: PlaybookRunRequest) -> Any:
+    """Exécute un playbook OSINT et retourne une fiche synthèse."""
+    if not payload.target.strip():
+        raise HTTPException(status_code=400, detail="Cible vide")
+    try:
+        result = await playbook_engine.run(
+            target=payload.target.strip(),
+            playbook_id=payload.playbook_id,
+        )
+        return result.to_dict()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur playbook: {str(exc)}")
+
+
+@app.get("/api/ai/status")
+async def api_ai_status() -> Any:
+    """Statut de la connexion Ollama / Investigator AI."""
+    return ai_investigator.check_status()
+
+
+@app.post("/api/ai/chat")
+async def api_ai_chat(payload: AIChatRequest) -> Any:
+    """Chat avec Investigator AI (réponses ou investigation automatique)."""
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message vide")
+    try:
+        history = [{"role": m.role, "content": m.content} for m in (payload.history or [])]
+        return await ai_investigator.chat(payload.message.strip(), history)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur Investigator AI: {str(exc)}")
+
+
+@app.post("/api/ai/investigate")
+async def api_ai_investigate(payload: AIInvestigateRequest) -> Any:
+    """Lance une investigation OSINT depuis un message en langage naturel."""
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="Message vide")
+    try:
+        return await ai_investigator.investigate(
+            payload.message.strip(),
+            playbook_id=payload.playbook_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur investigation: {str(exc)}")
+
+
+@app.post("/api/ai/summarize")
+async def api_ai_summarize(payload: dict) -> Any:
+    """Génère un résumé IA à partir d'un résultat d'investigation existant."""
+    if not payload:
+        raise HTTPException(status_code=400, detail="Résultat d'investigation requis")
+    try:
+        return await ai_investigator.summarize_investigation(payload)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur résumé: {str(exc)}")
+
+
+@app.post("/api/graph/from-investigation")
+async def api_graph_from_investigation(payload: GraphFromInvestigationRequest) -> Any:
+    """Génère un graphe de relations depuis un résultat d'investigation."""
+    if not payload.investigation:
+        raise HTTPException(status_code=400, detail="Investigation requise")
+    graph = build_graph_from_investigation(payload.investigation)
+    cytoscape = graph_to_cytoscape(graph)
+    return {"graph": graph, "cytoscape": cytoscape}
+
+
+@app.post("/api/graph/pivot")
+async def api_graph_pivot(payload: GraphPivotRequest) -> Any:
+    """Mode pivot : relance une investigation sur une entité et fusionne le graphe."""
+    target = payload.target.strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Cible vide")
+    playbook_id = payload.playbook_id
+    if not playbook_id and payload.entity_type:
+        playbook_id = suggest_pivot_playbook(payload.entity_type)
+    try:
+        result = await playbook_engine.run(target=target, playbook_id=playbook_id)
+        new_graph = build_graph_from_investigation(result.to_dict())
+        if payload.existing_graph:
+            merged = merge_graphs(payload.existing_graph, new_graph)
+        else:
+            merged = new_graph
+        return {
+            "investigation": result.to_dict(),
+            "graph": merged,
+            "cytoscape": graph_to_cytoscape(merged),
+        }
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur pivot: {str(exc)}")
+
+
+@app.post("/api/score/from-investigation")
+async def api_score_from_investigation(payload: ScoreFromInvestigationRequest) -> Any:
+    """Calcule le score de surface d'attaque (0–100) depuis une investigation."""
+    if not payload.investigation:
+        raise HTTPException(status_code=400, detail="Investigation requise")
+    return compute_attack_surface(payload.investigation)
+
+
+@app.post("/api/privacy/from-investigation")
+async def api_privacy_from_investigation(payload: PrivacyFromInvestigationRequest) -> Any:
+    """Calcule le Privacy Score personnel (0–100) depuis une investigation."""
+    if not payload.investigation:
+        raise HTTPException(status_code=400, detail="Investigation requise")
+    return compute_privacy_score(payload.investigation)
+
+
+@app.post("/api/timeline/from-investigation")
+async def api_timeline_from_investigation(payload: TimelineFromInvestigationRequest) -> Any:
+    """Construit une timeline d'activité depuis une investigation."""
+    if not payload.investigation:
+        raise HTTPException(status_code=400, detail="Investigation requise")
+    return build_timeline(payload.investigation)
+
+
+@app.get("/api/report/status")
+async def api_report_status() -> Any:
+    """Statut du moteur d'export PDF."""
+    return report_status()
+
+
+@app.post("/api/report/preview")
+async def api_report_preview(payload: ReportFromInvestigationRequest) -> Any:
+    """Aperçu JSON du contenu du rapport (sans générer le PDF)."""
+    if not payload.investigation:
+        raise HTTPException(status_code=400, detail="Investigation requise")
+    ctx = prepare_report_context(payload.investigation)
+    return {
+        "filename": suggested_filename(payload.investigation),
+        "target": ctx["target"],
+        "playbook_name": ctx["playbook_name"],
+        "overall_risk": ctx["overall_risk"],
+        "attack_surface_score": ctx["attack_surface"].get("score"),
+        "timeline_events": len((ctx["timeline"] or {}).get("events") or []),
+        "graph_nodes": len((ctx["graph"] or {}).get("nodes") or []),
+        "entities_count": len(ctx["entities"]),
+        "key_findings": ctx["key_findings"],
+    }
+
+
+@app.post("/api/report/from-investigation")
+async def api_report_from_investigation(payload: ReportFromInvestigationRequest) -> Response:
+    """Génère un rapport PDF professionnel depuis une investigation."""
+    if not payload.investigation:
+        raise HTTPException(status_code=400, detail="Investigation requise")
+    status = report_status()
+    if not status.get("pdf_available"):
+        raise HTTPException(
+            status_code=503,
+            detail="Export PDF indisponible — installez reportlab (pip install reportlab)",
+        )
+    try:
+        pdf_bytes = generate_pdf_bytes(payload.investigation)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur génération PDF : {exc}") from exc
+    filename = suggested_filename(payload.investigation)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/watch/status")
+async def api_watch_status() -> Any:
+    """Statut du module de surveillance OSINT."""
+    return watch_service.status()
+
+
+@app.get("/api/watches")
+async def api_list_watches() -> Any:
+    """Liste les cibles sous surveillance."""
+    return {"watches": watch_service.list_watches(), "status": watch_service.status()}
+
+
+@app.post("/api/watches")
+async def api_create_watch(payload: WatchCreateRequest) -> Any:
+    """Ajoute une cible à surveiller (baseline optionnelle depuis une investigation)."""
+    try:
+        return await watch_service.create_watch(
+            payload.target,
+            playbook_id=payload.playbook_id,
+            label=payload.label,
+            interval_hours=payload.interval_hours,
+            baseline_investigation=payload.baseline_investigation,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/watches/{watch_id}")
+async def api_get_watch(watch_id: str) -> Any:
+    watch = watch_service.get_watch(watch_id)
+    if not watch:
+        raise HTTPException(status_code=404, detail="Surveillance introuvable")
+    alerts = watch_service.list_alerts(watch_id=watch_id, limit=20)
+    return {"watch": watch, "recent_alerts": alerts}
+
+
+@app.patch("/api/watches/{watch_id}")
+async def api_update_watch(watch_id: str, payload: WatchUpdateRequest) -> Any:
+    try:
+        return await watch_service.update_watch(
+            watch_id,
+            status=payload.status,
+            label=payload.label,
+            interval_hours=payload.interval_hours,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.delete("/api/watches/{watch_id}")
+async def api_delete_watch(watch_id: str) -> Any:
+    if not await watch_service.delete_watch(watch_id):
+        raise HTTPException(status_code=404, detail="Surveillance introuvable")
+    return {"deleted": True, "watch_id": watch_id}
+
+
+@app.post("/api/watches/{watch_id}/check")
+async def api_check_watch(watch_id: str) -> Any:
+    """Relance une investigation et compare avec la baseline."""
+    try:
+        return await watch_service.run_check(watch_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/alerts")
+async def api_list_alerts(
+    watch_id: Optional[str] = None,
+    unread_only: bool = False,
+    limit: int = 100,
+) -> Any:
+    alerts = watch_service.list_alerts(
+        watch_id=watch_id,
+        unread_only=unread_only,
+        limit=min(limit, 500),
+    )
+    return {
+        "alerts": alerts,
+        "unread_count": watch_service.status().get("unread_alerts", 0),
+    }
+
+
+@app.post("/api/alerts/{alert_id}/read")
+async def api_mark_alert_read(alert_id: str) -> Any:
+    alert = watch_service.mark_alert_read(alert_id)
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alerte introuvable ou déjà lue")
+    return {"alert": alert}
+
+
+@app.post("/api/alerts/read-all")
+async def api_mark_all_alerts_read(watch_id: Optional[str] = None) -> Any:
+    count = watch_service.mark_all_alerts_read(watch_id=watch_id)
+    return {"marked_read": count}
+
+
+@app.get("/api/workspace/status")
+async def api_workspace_status() -> Any:
+    return workspace_service.status()
+
+
+@app.get("/api/workspaces")
+async def api_list_workspaces(username: str = Header(alias="X-PG-User")) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"workspaces": workspace_service.list_workspaces(user), "username": user}
+
+
+@app.post("/api/workspaces")
+async def api_create_workspace(
+    payload: WorkspaceCreateRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        ws = workspace_service.create_workspace(
+            payload.name,
+            owner=user,
+            description=payload.description or "",
+        )
+        return {"workspace": ws}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/workspaces/{workspace_id}")
+async def api_get_workspace(
+    workspace_id: str,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        return workspace_service.get_workspace(workspace_id, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.patch("/api/workspaces/{workspace_id}")
+async def api_update_workspace(
+    workspace_id: str,
+    payload: WorkspaceUpdateRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        ws = workspace_service.update_workspace(
+            workspace_id,
+            user,
+            name=payload.name,
+            description=payload.description,
+        )
+        return {"workspace": ws}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.delete("/api/workspaces/{workspace_id}")
+async def api_delete_workspace(
+    workspace_id: str,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        if not workspace_service.delete_workspace(workspace_id, user):
+            raise HTTPException(status_code=404, detail="Workspace introuvable")
+        return {"deleted": True, "workspace_id": workspace_id}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/workspaces/{workspace_id}/members")
+async def api_add_workspace_member(
+    workspace_id: str,
+    payload: WorkspaceMemberRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        member = workspace_service.add_member(
+            workspace_id,
+            user,
+            username=payload.username,
+            role=payload.role or "analyst",
+        )
+        return {"member": member}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.delete("/api/workspaces/{workspace_id}/members/{member_username}")
+async def api_remove_workspace_member(
+    workspace_id: str,
+    member_username: str,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        if not workspace_service.remove_member(workspace_id, user, member_username):
+            raise HTTPException(status_code=404, detail="Membre introuvable")
+        return {"removed": True}
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/workspaces/{workspace_id}/cases")
+async def api_create_case(
+    workspace_id: str,
+    payload: CaseCreateRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        case = workspace_service.create_case(
+            workspace_id,
+            user,
+            title=payload.title,
+            description=payload.description or "",
+            priority=payload.priority or "medium",
+            tags=payload.tags,
+            investigation=payload.investigation,
+        )
+        return {"case": case}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/api/workspaces/{workspace_id}/cases/{case_id}")
+async def api_get_case(
+    workspace_id: str,
+    case_id: str,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        return workspace_service.get_case(workspace_id, case_id, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.patch("/api/workspaces/{workspace_id}/cases/{case_id}")
+async def api_update_case(
+    workspace_id: str,
+    case_id: str,
+    payload: CaseUpdateRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        case = workspace_service.update_case(
+            workspace_id,
+            case_id,
+            user,
+            title=payload.title,
+            description=payload.description,
+            status=payload.status,
+            priority=payload.priority,
+            tags=payload.tags,
+        )
+        return {"case": case}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/workspaces/{workspace_id}/cases/{case_id}/investigations")
+async def api_add_case_investigation(
+    workspace_id: str,
+    case_id: str,
+    payload: CaseAddInvestigationRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        return workspace_service.add_investigation_to_case(
+            workspace_id, case_id, user, payload.investigation
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/workspaces/{workspace_id}/investigations")
+async def api_add_workspace_investigation(
+    workspace_id: str,
+    payload: WorkspaceAddInvestigationRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        return workspace_service.add_investigation_to_workspace(
+            workspace_id,
+            user,
+            payload.investigation,
+            case_title=payload.case_title,
+            case_id=payload.case_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.post("/api/workspaces/{workspace_id}/notes")
+async def api_create_note(
+    workspace_id: str,
+    payload: NoteCreateRequest,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        note = workspace_service.create_note(
+            workspace_id,
+            user,
+            payload.content,
+            case_id=payload.case_id,
+        )
+        return {"note": note}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/api/workspaces/{workspace_id}/activity")
+async def api_workspace_activity(
+    workspace_id: str,
+    limit: int = 50,
+    username: str = Header(alias="X-PG-User"),
+) -> Any:
+    try:
+        user = workspace_service.normalize_username(username)
+        return {
+            "activity": workspace_service.list_activity(workspace_id, user, limit=min(limit, 200)),
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@app.get("/api/extension/status")
+async def api_extension_status() -> Any:
+    """Statut API pour l'extension navigateur."""
+    return {
+        "ok": True,
+        "version": "1.0.0",
+        "api_base": os.getenv("PG_PUBLIC_URL", "http://127.0.0.1:8000"),
+        "cors_enabled": True,
+        "features": {
+            "url_analyze": True,
+            "playbook_quick_scan": True,
+            "playbook_suggest": True,
+            "privacy_score": True,
+            "attack_surface": True,
+            "open_dashboard": True,
+        },
+        "extension_path": str(EXTENSION_DIR) if EXTENSION_DIR.is_dir() else None,
+    }
+
+
 @app.get("/api/health")
 async def health():
     """Health check."""
@@ -1117,6 +1857,16 @@ async def health():
         "exiftool": _check_exiftool(),
         "sherlock": _check_sherlock(),
         "skiptracer": _check_skiptracer(),
+        "playbooks": True,
+        "investigator_ai": ai_investigator.check_status().get("available", False),
+        "graph": True,
+        "attack_surface_score": True,
+        "timeline": True,
+        "pdf_export": report_status().get("pdf_available", False),
+        "watch": True,
+        "workspace": True,
+        "privacy_score": True,
+        "browser_extension": EXTENSION_DIR.is_dir(),
     }}
 
 

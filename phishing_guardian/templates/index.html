@@ -1,415 +1,711 @@
 <!doctype html>
-<html lang="fr" class="h-full">
+<html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <title>PHISHING GUARDIAN - OSINT PLATFORM</title>
+    <title>Phishing Guardian — OSINT Platform</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css" />
+    <meta name="description" content="Plateforme OSINT centralisée — investigations automatisées, playbooks et outils de renseignement" />
+    <link rel="stylesheet" href="/static/pg-ui.css?v=5.1" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js" crossorigin="anonymous"></script>
   </head>
-  <body class="h-full bg-black text-green-400 font-mono overflow-x-hidden">
-    <!-- Matrix background -->
-    <canvas id="matrixCanvas" class="fixed inset-0 -z-10 opacity-10"></canvas>
-    
-    <!-- Scan lines -->
-    <div class="scanlines fixed inset-0 pointer-events-none"></div>
-    
-    <!-- Grid overlay -->
-    <div class="grid-overlay fixed inset-0 pointer-events-none"></div>
-
-    <div class="min-h-full flex flex-col relative">
-      <!-- Header -->
-      <header class="border-b-2 border-green-500 bg-black/95 backdrop-blur-md sticky top-0 z-50 shadow-[0_0_30px_rgba(0,255,0,0.4)]">
-        <div class="max-w-7xl mx-auto px-6 py-5">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
-              <div class="w-14 h-14 border-2 border-green-500 flex items-center justify-center animate-pulse-glow relative">
-                <div class="absolute inset-0 border-2 border-green-400 animate-spin-slow opacity-50"></div>
-                <span class="text-3xl relative z-10">⚡</span>
-              </div>
-              <div>
-                <h1 class="text-3xl font-black text-green-400 font-orbitron tracking-wider mb-1 text-glow">
-                  PHISHING GUARDIAN
-                </h1>
-                <p class="text-sm text-green-600 font-share-tech flex items-center gap-2">
-                  <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                  OSINT_PLATFORM v3.0 | CYBERSECURITY_INTELLIGENCE | HACKING_MODE_ACTIVE
-                </p>
-              </div>
+  <body>
+    <div class="app-shell">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-logo">
+            <div class="brand-icon">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 2L4 5.5V11c0 5.25 3.4 10.15 8 11.5 4.6-1.35 8-6.25 8-11.5V5.5L12 2z" fill="white" fill-opacity="0.95"/>
+              </svg>
             </div>
-            <div class="flex items-center gap-3">
-              <div class="px-5 py-2.5 border-2 border-green-500 bg-green-500/10 backdrop-blur-sm">
-                <span class="text-green-400 text-sm font-share-tech">STATUS: <span class="text-green-300 font-bold animate-pulse">ONLINE</span></span>
-              </div>
+            <div class="brand-text">
+              <h1>Phishing Guardian</h1>
+              <p>OSINT PLATFORM</p>
             </div>
           </div>
         </div>
-      </header>
 
-      <main class="flex-1 relative overflow-y-auto">
-        <div class="max-w-7xl mx-auto px-6 py-6 space-y-6">
-          <!-- Terminal -->
-          <div class="terminal-prompt">
-            <div class="flex items-center gap-2 mb-3">
-              <span class="text-green-500 font-share-tech font-bold">root@phishing-guardian:~$</span>
-              <span class="cursor-blink text-green-400">_</span>
+        <nav class="sidebar-nav">
+          <div class="nav-section-label">INVESTIGATION</div>
+          <button type="button" class="nav-item" data-target="panel-investigator" data-title="Investigator AI" data-subtitle="Assistant IA d'investigation OSINT">
+            <span class="nav-icon nav-icon-ai">🤖</span> Investigator AI
+          </button>
+          <button type="button" class="nav-item active" data-target="panel-playbooks" data-title="Playbooks" data-subtitle="Investigations automatisées">
+            <span class="nav-icon nav-icon-playbooks">⚡</span> Playbooks
+          </button>
+          <button type="button" class="nav-item" data-target="panel-graph" data-title="Graphe OSINT" data-subtitle="Relations entre entités découvertes">
+            <span class="nav-icon nav-icon-graph">🕸</span> Graphe
+          </button>
+          <button type="button" class="nav-item" data-target="panel-timeline" data-title="Timeline OSINT" data-subtitle="Chronologie d'activité numérique">
+            <span class="nav-icon nav-icon-timeline">📅</span> Timeline
+          </button>
+          <button type="button" class="nav-item" data-target="panel-privacy" data-title="Privacy Score" data-subtitle="Évaluation de votre vie privée numérique">
+            <span class="nav-icon nav-icon-privacy">🔒</span> Privacy
+          </button>
+
+          <div class="nav-section-label">MONITORING</div>
+          <button type="button" class="nav-item" data-target="panel-watch" data-title="Watch OSINT" data-subtitle="Surveillance et alertes sur vos cibles">
+            <span class="nav-icon nav-icon-watch">👁</span> Watch
+            <span id="watchNavBadge" class="nav-badge hidden">0</span>
+          </button>
+
+          <div class="nav-section-label">COLLABORATION</div>
+          <button type="button" class="nav-item" data-target="panel-workspace" data-title="Workspace OSINT" data-subtitle="Dossiers partagés et notes d'équipe">
+            <span class="nav-icon nav-icon-workspace">👥</span> Workspace
+          </button>
+
+          <div class="nav-section-label">OUTILS OSINT</div>
+          <button type="button" class="nav-item" data-target="panel-phishing" data-title="Analyse Phishing" data-subtitle="Détection d'emails et URLs suspects">
+            <span class="nav-icon">🎣</span> Phishing
+          </button>
+          <button type="button" class="nav-item" data-target="panel-shodan" data-title="Shodan" data-subtitle="Enrichissement IP et recherche">
+            <span class="nav-icon">🔍</span> Shodan
+          </button>
+          <button type="button" class="nav-item" data-target="panel-virustotal" data-title="VirusTotal" data-subtitle="Analyse de réputation">
+            <span class="nav-icon">🦠</span> VirusTotal
+          </button>
+          <button type="button" class="nav-item" data-target="panel-abuseipdb" data-title="AbuseIPDB" data-subtitle="Réputation IP">
+            <span class="nav-icon">🚫</span> AbuseIPDB
+          </button>
+          <button type="button" class="nav-item" data-target="panel-whois" data-title="WHOIS" data-subtitle="Registres domaine et IP">
+            <span class="nav-icon">📋</span> WHOIS
+          </button>
+          <button type="button" class="nav-item" data-target="panel-leakcheck" data-title="Leak Check" data-subtitle="Fuites de données">
+            <span class="nav-icon">🔓</span> Leak Check
+          </button>
+          <button type="button" class="nav-item" data-target="panel-exiftool" data-title="EXIF" data-subtitle="Métadonnées d'images">
+            <span class="nav-icon">📷</span> EXIF
+          </button>
+          <button type="button" class="nav-item" data-target="panel-vulnerabilities" data-title="Vulnérabilités" data-subtitle="Scan CVE et ports">
+            <span class="nav-icon">⚠️</span> Vulnérabilités
+          </button>
+          <button type="button" class="nav-item" data-target="panel-extension" data-title="Extension navigateur" data-subtitle="OSINT depuis Chrome / Edge">
+            <span class="nav-icon">🧩</span> Extension
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="status-pill">
+            <span class="status-dot"></span>
+            <span>Tous les systèmes opérationnels</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main -->
+      <div class="main-wrapper">
+        <div class="main-matrix" aria-hidden="true">
+          <canvas id="matrixCanvas"></canvas>
+        </div>
+        <header class="topbar">
+          <div>
+            <div class="topbar-title" id="pageTitle">Playbooks</div>
+            <div class="topbar-subtitle" id="pageSubtitle">Investigations automatisées</div>
+          </div>
+          <div class="topbar-actions">
+            <span class="badge badge-version">V5.0</span>
+          </div>
+        </header>
+
+        <main class="content">
+          <!-- Activity log -->
+          <div class="activity-log glass-panel">
+            <div class="activity-log-header">
+              <span class="log-icon">▸</span> JOURNAL D'ACTIVITÉ
             </div>
-            <div id="terminalOutput" class="text-green-400 text-sm font-share-tech min-h-[80px] max-h-[200px] overflow-y-auto space-y-1">
-              <div class="typing-text" data-text="[SYSTEM] Initializing OSINT modules..."></div>
-              <div class="typing-text-delay" data-text="[SYSTEM] All modules ready. Awaiting commands..."></div>
+            <div id="terminalOutput" class="activity-log-body">
+              <div class="log-line">14:32:01 — Tous les modules initialisés et prêts.</div>
             </div>
           </div>
 
-          <!-- Navigation -->
-          <div class="flex gap-3 border-b-2 border-green-500/30 overflow-x-auto pb-2">
-            <button id="tab-phishing" class="tab-hacking active" data-target="panel-phishing">
-              <span class="text-green-500">&gt;</span> PHISHING
-            </button>
-            <button id="tab-shodan" class="tab-hacking" data-target="panel-shodan">
-              <span class="text-green-500">&gt;</span> SHODAN
-            </button>
-            <button id="tab-virustotal" class="tab-hacking" data-target="panel-virustotal">
-              <span class="text-green-500">&gt;</span> VIRUSTOTAL
-            </button>
-            <button id="tab-abuseipdb" class="tab-hacking" data-target="panel-abuseipdb">
-              <span class="text-green-500">&gt;</span> ABUSEIPDB
-            </button>
-            <button id="tab-whois" class="tab-hacking" data-target="panel-whois">
-              <span class="text-green-500">&gt;</span> WHOIS
-            </button>
-            <button id="tab-leakcheck" class="tab-hacking" data-target="panel-leakcheck">
-              <span class="text-green-500">&gt;</span> LEAK_CHECK
-            </button>
-            <button id="tab-exiftool" class="tab-hacking" data-target="panel-exiftool">
-              <span class="text-green-500">&gt;</span> EXIF
-            </button>
-            <button id="tab-vulnerabilities" class="tab-hacking" data-target="panel-vulnerabilities">
-              <span class="text-green-500">&gt;</span> VULNERABILITIES
-            </button>
+          <!-- ========== GRAPHE OSINT ========== -->
+          <div id="panel-graph" class="panel hidden">
+            <div class="graph-workspace">
+              <section class="graph-toolbar glass-panel">
+                <div class="graph-toolbar-left">
+                  <h2>Graphe de relations</h2>
+                  <p>Visualisez les connexions entre entités. Cliquez pour inspecter, double-cliquez pour pivoter.</p>
+                </div>
+                <div class="graph-toolbar-actions">
+                  <span id="graphStatus" class="graph-status graph-status-idle">Prêt</span>
+                  <button type="button" id="graphFitBtn" class="pb-export-btn">Ajuster</button>
+                  <button type="button" id="graphPivotBtn" class="pb-export-btn">🔍 Pivot</button>
+                  <button type="button" id="graphExportJson" class="pb-export-btn">⬇ JSON</button>
+                  <button type="button" id="graphExportPng" class="pb-export-btn">🖼 PNG</button>
+                  <button type="button" id="graphClearBtn" class="pb-export-btn">Effacer</button>
+                </div>
+              </section>
+              <div class="graph-layout">
+                <div class="graph-canvas-wrap glass-panel">
+                  <div id="graphMeta" class="graph-meta"></div>
+                  <div id="cyGraph" class="graph-canvas"></div>
+                  <div class="graph-legend">
+                    <span style="--c:#60a5fa">✉ Email</span>
+                    <span style="--c:#a78bfa">👤 Pseudo</span>
+                    <span style="--c:#34d399">🌐 Domaine</span>
+                    <span style="--c:#fbbf24">📡 IP</span>
+                    <span style="--c:#f472b6">🔗 URL</span>
+                    <span style="--c:#fb923c">🏢 Org</span>
+                  </div>
+                </div>
+                <aside class="graph-side glass-panel">
+                  <div class="graph-side-header">Détail du nœud</div>
+                  <div id="graphNodeDetail" class="graph-side-body">
+                    <p class="graph-side-empty">Lancez une investigation puis ouvrez le graphe, ou chargez depuis Playbooks.</p>
+                  </div>
+                </aside>
+              </div>
+            </div>
           </div>
 
-          <!-- Panel Phishing -->
-          <div id="panel-phishing" class="panel-hacking">
-            <div class="grid lg:grid-cols-2 gap-6">
+          <!-- ========== TIMELINE OSINT ========== -->
+          <div id="panel-timeline" class="panel hidden">
+            <div class="tl-workspace">
+              <section class="tl-toolbar glass-panel">
+                <div class="tl-toolbar-left">
+                  <h2>Timeline d'activité</h2>
+                  <p>Chronologie des fuites, enregistrements WHOIS, profils sociaux et scans OSINT.</p>
+                </div>
+                <div class="tl-toolbar-actions">
+                  <span id="tlStatus" class="graph-status graph-status-idle">Prêt</span>
+                  <button type="button" id="tlExportJson" class="pb-export-btn">⬇ JSON</button>
+                  <button type="button" id="tlClearBtn" class="pb-export-btn">Effacer</button>
+                </div>
+              </section>
+              <div id="tlMeta" class="tl-meta glass-panel"></div>
+              <div id="tlFilters" class="tl-filters"></div>
+              <div class="tl-layout">
+                <div class="tl-track-wrap glass-panel">
+                  <div id="tlTrack" class="tl-track">
+                    <div class="tl-empty">Lancez une investigation puis ouvrez la timeline depuis Playbooks.</div>
+                  </div>
+                </div>
+                <aside class="tl-side glass-panel">
+                  <div class="tl-side-header">Détail & patterns</div>
+                  <div id="tlDetail" class="tl-side-body">
+                    <p class="tl-detail-empty">Cliquez sur un événement pour voir les détails.</p>
+                  </div>
+                  <div id="tlInsights" class="tl-insights"></div>
+                </aside>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== PRIVACY SCORE ========== -->
+          <div id="panel-privacy" class="panel hidden">
+            <div class="pv-workspace">
+              <section class="pv-toolbar glass-panel">
+                <div class="pv-toolbar-left">
+                  <h2>Privacy Score personnel</h2>
+                  <p>Évalue la protection de la vie privée : fuites, profils publics, corrélation d'identité et historique numérique. 100 = très privé.</p>
+                </div>
+                <div class="pv-toolbar-actions">
+                  <span id="pvStatus" class="graph-status graph-status-idle">Prêt</span>
+                  <button type="button" id="pvClearBtn" class="pb-export-btn">Effacer</button>
+                </div>
+              </section>
+              <div id="pvMeta" class="pv-meta glass-panel"></div>
+              <div class="pv-layout">
+                <div class="pv-gauge-wrap glass-panel">
+                  <div id="pvGauge" class="pv-gauge">
+                    <div class="pv-empty">Lancez une investigation puis ouvrez Privacy depuis Playbooks.</div>
+                  </div>
+                  <p id="pvSummary" class="pv-summary"></p>
+                </div>
+                <div class="pv-detail-col">
+                  <section class="glass-panel pv-panel-block">
+                    <div class="ws-section-title">Facteurs d'exposition</div>
+                    <div id="pvFactors" class="pv-factors"></div>
+                  </section>
+                  <section class="glass-panel pv-panel-block">
+                    <div class="ws-section-title">Conseils confidentialité</div>
+                    <div id="pvRecs" class="pv-recs"></div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== WATCH / ALERTES ========== -->
+          <div id="panel-watch" class="panel hidden">
+            <div class="watch-workspace">
+              <section class="watch-toolbar glass-panel">
+                <div class="watch-toolbar-left">
+                  <h2>Watch OSINT</h2>
+                  <p>Surveillez vos cibles — re-scans automatiques et alertes en cas de changement (fuites, score, entités).</p>
+                </div>
+                <div class="watch-toolbar-actions">
+                  <span id="watchStatus" class="graph-status graph-status-idle">Chargement…</span>
+                  <button type="button" id="watchRefreshBtn" class="pb-export-btn">↻ Actualiser</button>
+                  <button type="button" id="watchReadAllBtn" class="pb-export-btn">✓ Tout lire</button>
+                </div>
+              </section>
+
+              <div class="watch-layout">
+                <aside class="watch-side glass-panel">
+                  <div class="watch-side-header">Nouvelle surveillance</div>
+                  <form id="watchCreateForm" class="watch-form">
+                    <label class="watch-label">Cible</label>
+                    <input type="text" id="watchTarget" class="watch-input" placeholder="email, domaine, IP, pseudo…" required />
+                    <label class="watch-label">Libellé (optionnel)</label>
+                    <input type="text" id="watchLabel" class="watch-input" placeholder="Ex: Cible principale" />
+                    <label class="watch-label">Intervalle (heures)</label>
+                    <select id="watchInterval" class="watch-input">
+                      <option value="6">6 h</option>
+                      <option value="12">12 h</option>
+                      <option value="24" selected>24 h</option>
+                      <option value="48">48 h</option>
+                      <option value="168">7 j</option>
+                    </select>
+                    <button type="submit" id="watchCreateBtn" class="watch-submit-btn">
+                      <span class="btn-loader" aria-hidden="true"></span>
+                      <span>👁 Ajouter à la watchlist</span>
+                    </button>
+                  </form>
+                  <div id="watchStats" class="watch-stats"></div>
+                </aside>
+
+                <div class="watch-main">
+                  <section class="watch-list-wrap glass-panel">
+                    <div class="watch-section-title">Cibles surveillées</div>
+                    <div id="watchList" class="watch-list">
+                      <p class="watch-empty">Aucune surveillance active. Ajoutez une cible ou utilisez « Surveiller » depuis Playbooks.</p>
+                    </div>
+                  </section>
+                  <section class="watch-alerts-wrap glass-panel">
+                    <div class="watch-section-title">Alertes récentes</div>
+                    <div id="watchAlerts" class="watch-alerts">
+                      <p class="watch-empty">Aucune alerte pour le moment.</p>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== WORKSPACE COLLABORATIF ========== -->
+          <div id="panel-workspace" class="panel hidden">
+            <div class="ws-collab-workspace">
+              <section id="wsUserBanner" class="ws-user-banner glass-panel">
+                <form id="wsUserForm" class="ws-user-form">
+                  <span>👤 Identifiez-vous pour collaborer :</span>
+                  <input type="text" id="wsUsername" class="watch-input" placeholder="votre.pseudo" pattern="[a-zA-Z0-9._-]{2,32}" required />
+                  <button type="submit" class="watch-submit-btn">Entrer</button>
+                </form>
+              </section>
+
+              <section class="ws-toolbar glass-panel">
+                <div class="ws-toolbar-left">
+                  <h2>Workspace collaboratif</h2>
+                  <p>Dossiers d'investigation partagés, membres, notes et journal d'activité.</p>
+                  <div class="ws-user-line">Connecté : <strong id="wsCurrentUser">—</strong></div>
+                </div>
+                <div class="ws-toolbar-actions">
+                  <select id="wsWorkspaceSelect" class="ws-select"></select>
+                  <span id="wsStatus" class="graph-status graph-status-idle">—</span>
+                  <button type="button" id="wsRefreshBtn" class="pb-export-btn">↻ Actualiser</button>
+                </div>
+              </section>
+
+              <div id="wsEmpty" class="ws-empty-state glass-panel hidden">
+                <p>Aucun workspace. Créez-en un ci-dessous pour commencer à collaborer.</p>
+              </div>
+
+              <div id="wsDetail" class="ws-detail hidden">
+                <section class="ws-header glass-panel">
+                  <h3 id="wsTitle">—</h3>
+                  <p id="wsDesc" class="ws-desc"></p>
+                  <div id="wsMeta" class="ws-meta"></div>
+                </section>
+
+                <div class="ws-grid">
+                  <aside class="ws-col glass-panel">
+                    <div class="ws-section-title">Membres</div>
+                    <div id="wsMembers" class="ws-members"></div>
+                    <form id="wsAddMemberForm" class="ws-inline-form">
+                      <input type="text" id="wsMemberName" class="watch-input" placeholder="pseudo" />
+                      <select id="wsMemberRole" class="watch-input">
+                        <option value="analyst">Analyste</option>
+                        <option value="viewer">Lecteur</option>
+                        <option value="owner">Owner</option>
+                      </select>
+                      <button type="submit" class="pb-export-btn">+ Ajouter</button>
+                    </form>
+
+                    <div class="ws-section-title" style="margin-top:16px">Nouveau dossier</div>
+                    <form id="wsCaseForm" class="ws-inline-form">
+                      <input type="text" id="wsCaseTitle" class="watch-input" placeholder="Titre du dossier" required />
+                      <button type="submit" class="pb-export-btn">Créer</button>
+                    </form>
+
+                    <div class="ws-section-title" style="margin-top:16px">Note</div>
+                    <form id="wsNoteForm" class="ws-note-form">
+                      <textarea id="wsNoteContent" class="ws-textarea" rows="3" placeholder="Note collaborative…"></textarea>
+                      <input type="hidden" id="wsNoteCase" value="" />
+                      <button type="submit" class="watch-submit-btn">Publier</button>
+                    </form>
+                  </aside>
+
+                  <div class="ws-col-main">
+                    <section class="glass-panel ws-panel-block">
+                      <div class="ws-section-title">Dossiers d'investigation</div>
+                      <div id="wsCases" class="ws-cases"></div>
+                    </section>
+                    <section class="glass-panel ws-panel-block">
+                      <div class="ws-section-title">Notes récentes</div>
+                      <div id="wsNotes" class="ws-notes-list"></div>
+                    </section>
+                    <section class="glass-panel ws-panel-block">
+                      <div class="ws-section-title">Activité</div>
+                      <div id="wsActivity" class="ws-activity-list"></div>
+                    </section>
+                  </div>
+                </div>
+              </div>
+
+              <section class="ws-create glass-panel">
+                <div class="ws-section-title">Créer un workspace</div>
+                <form id="wsCreateForm" class="ws-create-form">
+                  <input type="text" id="wsNewName" class="watch-input" placeholder="Nom du workspace" required />
+                  <input type="text" id="wsNewDesc" class="watch-input" placeholder="Description (optionnel)" />
+                  <button type="submit" class="watch-submit-btn">+ Créer workspace</button>
+                </form>
+              </section>
+            </div>
+          </div>
+
+          <!-- ========== INVESTIGATOR AI ========== -->
+          <div id="panel-investigator" class="panel hidden">
+            <div class="ai-workspace">
+              <section class="ai-header glass-panel">
+                <div class="ai-header-top">
+                  <div>
+                    <h2>Investigator AI</h2>
+                    <p>Décrivez votre cible en langage naturel — l'IA détecte le type, lance le playbook adapté et rédige un rapport.</p>
+                  </div>
+                  <div id="aiStatusBadge" class="ai-status-badge offline">
+                    <span class="ai-status-dot"></span>
+                    <span class="ai-status-text">Vérification…</span>
+                  </div>
+                </div>
+                <div id="aiOllamaHelp" class="ai-ollama-help hidden" role="note"></div>
+                <div class="ai-quick-prompts">
+                  <button type="button" class="ai-prompt-chip" data-prompt="Investigue john@company.com">👤 Email</button>
+                  <button type="button" class="ai-prompt-chip" data-prompt="Analyse le domaine example.com">🌐 Domaine</button>
+                  <button type="button" class="ai-prompt-chip" data-prompt="OSINT sur l'IP 8.8.8.8">📡 IP</button>
+                  <button type="button" class="ai-prompt-chip" data-prompt="Recherche le pseudo johndoe sur les réseaux">📱 Pseudo</button>
+                </div>
+              </section>
+
+              <div class="ai-layout">
+                <section class="ai-chat glass-panel">
+                  <div id="aiChatMessages" class="ai-chat-messages">
+                    <div class="ai-msg assistant">
+                      <div class="ai-msg-avatar">🤖</div>
+                      <div class="ai-msg-body">
+                        <p>Bonjour, je suis <strong>Investigator AI</strong>. Décrivez votre cible et je lancerai l'investigation OSINT adaptée.</p>
+                        <p class="ai-msg-hint">Exemple : <em>Investigue suspect@domain.com et résume les risques</em></p>
+                      </div>
+                    </div>
+                  </div>
+                  <form id="aiChatForm" class="ai-chat-input-row">
+                    <textarea id="aiChatInput" class="ai-chat-input" rows="2"
+                      placeholder="Décrivez votre investigation…" autocomplete="off"></textarea>
+                    <button type="submit" id="aiChatSend" class="ai-send-btn">
+                      <span class="btn-loader" aria-hidden="true"></span>
+                      <span>Envoyer</span>
+                    </button>
+                  </form>
+                </section>
+
+                <aside id="aiInvestigationPanel" class="ai-side glass-panel">
+                  <div class="ai-side-header">Dernière investigation</div>
+                  <div id="aiInvestigationContent" class="ai-side-body">
+                    <div class="ai-side-empty">
+                      <div class="ai-side-empty-icon">🔬</div>
+                      <p>Lancez une investigation via le chat pour voir les résultats ici.</p>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== PLAYBOOKS ========== -->
+          <div id="panel-playbooks" class="panel">
+            <div class="pb-workspace">
+              <section class="pb-hero glass-panel">
+                <div class="pb-hero-content">
+                  <h2>Lancer une investigation</h2>
+                  <p>Décrivez votre cible — email, domaine, IP ou pseudo. Le playbook adapté sera sélectionné automatiquement.</p>
+                  <div class="pb-search-row">
+                    <div class="pb-search-input-wrap">
+                      <span class="search-icon">🔎</span>
+                      <input id="playbookTarget" type="text" class="pb-search-input"
+                        placeholder="john@company.com, example.com, 8.8.8.8…" autocomplete="off" />
+                    </div>
+                    <button id="playbookRunBtn" class="pb-run-btn" type="button">
+                      <span class="btn-glow" aria-hidden="true"></span>
+                      <span class="btn-loader" aria-hidden="true"></span>
+                      <span class="btn-label">Lancer l'investigation</span>
+                    </button>
+                  </div>
+                  <div class="pb-target-meta">
+                    <span id="pbTargetType"></span>
+                    <span id="playbookHint" class="pb-target-type">Saisissez une cible pour détecter le type automatiquement.</span>
+                  </div>
+                </div>
+              </section>
+
+              <div class="pb-layout">
+                <div class="pb-col-left">
+                  <div class="pb-col-label">Playbooks disponibles</div>
+                  <div id="playbookList" class="pb-playbook-list">
+                    <div class="pb-spinner" style="margin:2rem auto"></div>
+                  </div>
+                </div>
+
+                <section id="playbookResults" class="pb-col-right glass-panel">
+                  <div class="pb-empty-state">
+                    <div class="pb-empty-icon">🔬</div>
+                    <h3>Prêt pour l'investigation</h3>
+                    <p>Saisissez une cible et lancez un playbook. Les résultats de tous les outils seront agrégés ici.</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== PHISHING ========== -->
+          <div id="panel-phishing" class="panel hidden">
+            <div class="panel-grid">
               <div class="space-y-5">
                 <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> EMAIL_ANALYSIS
-                  </div>
-                  <div class="space-y-3 p-5">
-                    <textarea
-                      id="email"
-                      class="input-hacking h-48"
-                      placeholder="&gt; Paste suspicious email content here..."
-                    ></textarea>
-                    <div class="text-center text-green-400 text-xs font-share-tech">OU</div>
-                    <div>
-                      <label class="block text-green-400 text-sm font-share-tech mb-2">
-                        Upload une capture d'écran d'email
-                      </label>
-                      <input
-                        type="file"
-                        id="emailImage"
-                        accept="image/*"
-                        class="input-hacking file:bg-green-500/10 file:text-green-400 file:border-green-500 file:px-3 file:py-2 file:rounded file:cursor-pointer"
-                      />
-                      <div id="imagePreview" class="mt-2 hidden">
-                        <img id="previewImg" src="" alt="Preview" class="max-w-full h-auto border border-green-500/30 rounded" />
+                  <div class="card-header">Analyse email</div>
+                  <div class="card-body space-y-3">
+                    <textarea id="email" class="input-hacking h-48" placeholder="Collez le contenu d'un email suspect…"></textarea>
+                    <div style="text-align:center;color:var(--text-muted);font-size:0.75rem">ou</div>
+                    <div class="form-group" style="margin:0">
+                      <label class="label">Capture d'écran d'email</label>
+                      <input type="file" id="emailImage" accept="image/*" class="input-hacking" />
+                      <div id="imagePreview" class="hidden mt-2">
+                        <img id="previewImg" src="" alt="Preview" style="max-width:100%;border-radius:8px;border:1px solid var(--border-subtle)" />
                       </div>
                     </div>
                   </div>
                 </div>
-
                 <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> URL_ANALYSIS
-                  </div>
-                  <input
-                    id="urls"
-                    type="text"
-                    class="input-hacking mb-4"
-                    placeholder="&gt; http://example.com, https://suspicious.site"
-                  />
-                  <button id="analyzeBtn" class="btn-hacking w-full">
-                    <span>[EXECUTE_ANALYSIS]</span>
-                    <span id="spinner" class="hidden ml-2 animate-spin">⚡</span>
-                  </button>
-                </div>
-              </div>
-
-              <div class="space-y-5">
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> RISK_ASSESSMENT
-                  </div>
-                  <div id="riskSummary" class="text-green-400 text-sm font-share-tech min-h-[100px]">
-                    <div class="text-green-600">&gt; Awaiting analysis...</div>
-                  </div>
-                  <div id="riskBadge" class="hidden mt-4"></div>
-                </div>
-
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> DETAILED_RESULTS
-                  </div>
-                  <div id="details" class="text-green-400 text-xs font-share-tech space-y-3 min-h-[200px]">
-                    <div class="text-green-600">&gt; No data available...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel Shodan -->
-          <div id="panel-shodan" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div class="space-y-5">
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> IP_ENRICHMENT
-                  </div>
-                  <input id="shodanIp" type="text" class="input-hacking mb-4" placeholder="&gt; 213.186.33.4" />
-                  <button id="shodanIpBtn" class="btn-hacking w-full">
-                    [QUERY_SHODAN]
-                  </button>
-                </div>
-
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> ADVANCED_SEARCH
-                  </div>
-                  <input id="shodanQuery" type="text" class="input-hacking mb-4" placeholder='&gt; port:80 country:FR "nginx"' />
-                  <button id="shodanQueryBtn" class="btn-hacking w-full">
-                    [EXECUTE_SEARCH]
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> SHODAN_RESULTS
-                  </div>
-                  <div id="shodanResults" class="text-green-400 text-xs font-share-tech min-h-[500px] max-h-[600px] overflow-y-auto">
-                    <div class="text-green-600">&gt; No results...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel VirusTotal -->
-          <div id="panel-virustotal" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> VIRUSTOTAL_SCAN
-                  </div>
-                  <input id="virustotalQuery" type="text" class="input-hacking mb-4" placeholder="&gt; URL, IP, domain, or hash" />
-                  <button id="virustotalBtn" class="btn-hacking w-full">
-                    [SCAN_THREAT]
-                  </button>
-                  <p class="text-green-600 text-xs mt-3 font-share-tech">
-                    &gt; Scans across 70+ antivirus engines
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> SCAN_RESULTS
-                  </div>
-                  <div id="virustotalResults" class="text-green-400 text-xs font-share-tech min-h-[500px] max-h-[600px] overflow-y-auto">
-                    <div class="text-green-600">&gt; Awaiting scan...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel AbuseIPDB -->
-          <div id="panel-abuseipdb" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> ABUSEIPDB_CHECK
-                  </div>
-                  <input id="abuseipdbIp" type="text" class="input-hacking mb-4" placeholder="&gt; 192.168.1.1" />
-                  <button id="abuseipdbBtn" class="btn-hacking w-full">
-                    [CHECK_REPUTATION]
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> REPUTATION_DATA
-                  </div>
-                  <div id="abuseipdbResults" class="text-green-400 text-xs font-share-tech min-h-[500px] max-h-[600px] overflow-y-auto">
-                    <div class="text-green-600">&gt; No data...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel Whois -->
-          <div id="panel-whois" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> WHOIS_LOOKUP
-                  </div>
-                  <input id="whoisQuery" type="text" class="input-hacking mb-4" placeholder="&gt; example.com or 192.168.1.1" />
-                  <button id="whoisBtn" class="btn-hacking w-full">
-                    [QUERY_WHOIS]
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> WHOIS_DATA
-                  </div>
-                  <div id="whoisResults" class="text-green-400 text-xs font-share-tech font-mono min-h-[500px] max-h-[600px] overflow-y-auto">
-                    <div class="text-green-600">&gt; No data...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel LeakCheck -->
-          <div id="panel-leakcheck" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> LEAK_CHECK
-                  </div>
-                  <input id="leakcheckEmail" type="email" class="input-hacking mb-4" placeholder="&gt; user@example.com" />
-                  <button id="leakcheckBtn" class="btn-hacking w-full">
-                    [CHECK_BREACHES]
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> BREACH_DATA
-                  </div>
-                  <div id="leakcheckResults" class="text-green-400 text-xs font-share-tech min-h-[500px] max-h-[600px] overflow-y-auto">
-                    <div class="text-green-600">&gt; No data...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel ExifTool -->
-          <div id="panel-exiftool" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> EXIF_EXTRACTOR
-                  </div>
-                  <input id="exiftoolFile" type="file" accept="image/*" class="input-hacking mb-4 file:bg-green-500/10 file:text-green-400 file:border-green-500 file:px-3 file:py-2 file:rounded" />
-                  <button id="exiftoolBtn" class="btn-hacking w-full">
-                    [EXTRACT_METADATA]
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> METADATA_OUTPUT
-                  </div>
-                  <div id="exiftoolResults" class="text-green-400 text-xs font-share-tech font-mono min-h-[500px] max-h-[600px] overflow-y-auto">
-                    <div class="text-green-600">&gt; No data...</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Panel Vulnerabilities -->
-          <div id="panel-vulnerabilities" class="panel-hacking hidden">
-            <div class="grid lg:grid-cols-2 gap-6">
-              <div class="space-y-5">
-                <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> VULNERABILITY_SCAN
-                  </div>
-                  <div class="space-y-4 p-5">
-                    <div>
-                      <label class="block text-green-400 text-sm font-share-tech mb-2">
-                        IP_ADDRESS_OR_URL (optionnel - récupère les CVE depuis Shodan)
-                      </label>
-                      <input
-                        type="text"
-                        id="vulnIp"
-                        class="input-hacking"
-                        placeholder="192.168.1.1 ou https://example.com"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-green-400 text-sm font-share-tech mb-2">
-                        CVE_LIST (une par ligne, ex: CVE-2023-1234)
-                      </label>
-                      <textarea
-                        id="vulnCveList"
-                        class="input-hacking h-32"
-                        placeholder="CVE-2023-1234&#10;CVE-2024-5678"
-                      ></textarea>
-                    </div>
-                    <button
-                      id="vulnBtn"
-                      type="button"
-                      class="btn-hacking w-full"
-                    >
-                      <span class="text-green-500">&gt;</span> ANALYZE_VULNERABILITIES
+                  <div class="card-header">Analyse URLs</div>
+                  <div class="card-body">
+                    <input id="urls" type="text" class="input-hacking mb-4" placeholder="https://example.com, https://suspicious.site" />
+                    <button type="button" id="analyzeBtn" class="btn-hacking w-full">
+                      Analyser <span id="spinner" class="hidden animate-spin">⟳</span>
                     </button>
                   </div>
                 </div>
               </div>
               <div class="space-y-5">
                 <div class="card-hacking">
-                  <div class="card-header">
-                    <span class="text-green-500">&gt;</span> RESULTS
-                  </div>
-                  <div id="vulnResults" class="text-green-400 text-xs font-share-tech font-mono min-h-[500px] max-h-[600px] overflow-y-auto p-5">
-                    <div class="text-green-600">&gt; No data...</div>
-                  </div>
+                  <div class="card-header">Évaluation du risque</div>
+                  <div class="card-body" id="riskSummary"><div class="text-green-600">En attente d'analyse…</div></div>
+                  <div id="riskBadge" class="hidden" style="padding:0 1.25rem 1.25rem"></div>
+                </div>
+                <div class="card-hacking">
+                  <div class="card-header">Résultats détaillés</div>
+                  <div class="card-body" id="details"><div class="text-green-600">Aucune donnée.</div></div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
-      </main>
 
-      <footer class="border-t-2 border-green-500 bg-black/95 backdrop-blur-md mt-auto">
-        <div class="max-w-7xl mx-auto px-6 py-4 text-xs text-green-600 font-share-tech flex justify-between items-center">
-          <span>&gt; PHISHING_GUARDIAN v3.0 | HACKING_MODE_ACTIVE | ALL_SYSTEMS_OPERATIONAL</span>
-          <span class="flex items-center gap-2">
-            <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-            SYSTEM_ONLINE
-          </span>
-        </div>
-      </footer>
+          <!-- ========== SHODAN ========== -->
+          <div id="panel-shodan" class="panel hidden">
+            <div class="panel-grid">
+              <div class="space-y-5">
+                <div class="card-hacking">
+                  <div class="card-header">Enrichissement IP</div>
+                  <div class="card-body">
+                    <input id="shodanIp" type="text" class="input-hacking mb-4" placeholder="8.8.8.8" />
+                    <button type="button" id="shodanIpBtn" class="btn-hacking w-full">Interroger Shodan</button>
+                  </div>
+                </div>
+                <div class="card-hacking">
+                  <div class="card-header">Recherche avancée</div>
+                  <div class="card-body">
+                    <input id="shodanQuery" type="text" class="input-hacking mb-4" placeholder='port:80 country:FR "nginx"' />
+                    <button type="button" id="shodanQueryBtn" class="btn-hacking w-full">Lancer la recherche</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Résultats Shodan</div>
+                <div class="card-body" id="shodanResults" style="max-height:600px;overflow-y:auto"><div class="text-green-600">Aucun résultat.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== VIRUSTOTAL ========== -->
+          <div id="panel-virustotal" class="panel hidden">
+            <div class="panel-grid">
+              <div class="card-hacking">
+                <div class="card-header">Scan VirusTotal</div>
+                <div class="card-body">
+                  <input id="virustotalQuery" type="text" class="input-hacking mb-4" placeholder="URL, IP, domaine ou hash" />
+                  <button type="button" id="virustotalBtn" class="btn-hacking w-full">Scanner</button>
+                  <p class="form-hint">70+ moteurs antivirus</p>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Résultats</div>
+                <div class="card-body" id="virustotalResults" style="max-height:600px;overflow-y:auto"><div class="text-green-600">En attente…</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== ABUSEIPDB ========== -->
+          <div id="panel-abuseipdb" class="panel hidden">
+            <div class="panel-grid">
+              <div class="card-hacking">
+                <div class="card-header">Vérification AbuseIPDB</div>
+                <div class="card-body">
+                  <input id="abuseipdbIp" type="text" class="input-hacking mb-4" placeholder="192.168.1.1" />
+                  <button type="button" id="abuseipdbBtn" class="btn-hacking w-full">Vérifier la réputation</button>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Données de réputation</div>
+                <div class="card-body" id="abuseipdbResults" style="max-height:600px;overflow-y:auto"><div class="text-green-600">Aucune donnée.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== WHOIS ========== -->
+          <div id="panel-whois" class="panel hidden">
+            <div class="panel-grid">
+              <div class="card-hacking">
+                <div class="card-header">WHOIS Lookup</div>
+                <div class="card-body">
+                  <input id="whoisQuery" type="text" class="input-hacking mb-4" placeholder="example.com ou 8.8.8.8" />
+                  <button type="button" id="whoisBtn" class="btn-hacking w-full">Interroger WHOIS</button>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Données WHOIS</div>
+                <div class="card-body mono" id="whoisResults" style="max-height:600px;overflow-y:auto;font-size:0.8rem"><div class="text-green-600">Aucune donnée.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== LEAK CHECK ========== -->
+          <div id="panel-leakcheck" class="panel hidden">
+            <div class="panel-grid">
+              <div class="card-hacking">
+                <div class="card-header">Vérification de fuites</div>
+                <div class="card-body">
+                  <input id="leakcheckEmail" type="email" class="input-hacking mb-4" placeholder="user@example.com" />
+                  <button type="button" id="leakcheckBtn" class="btn-hacking w-full">Vérifier les breaches</button>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Résultats</div>
+                <div class="card-body" id="leakcheckResults" style="max-height:600px;overflow-y:auto"><div class="text-green-600">Aucune donnée.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== EXIF ========== -->
+          <div id="panel-exiftool" class="panel hidden">
+            <div class="panel-grid">
+              <div class="card-hacking">
+                <div class="card-header">Extracteur EXIF</div>
+                <div class="card-body">
+                  <input id="exiftoolFile" type="file" accept="image/*" class="input-hacking mb-4" />
+                  <button type="button" id="exiftoolBtn" class="btn-hacking w-full">Extraire les métadonnées</button>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Métadonnées</div>
+                <div class="card-body mono" id="exiftoolResults" style="max-height:600px;overflow-y:auto;font-size:0.8rem"><div class="text-green-600">Aucune donnée.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== VULNERABILITIES ========== -->
+          <div id="panel-vulnerabilities" class="panel hidden">
+            <div class="panel-grid">
+              <div class="card-hacking">
+                <div class="card-header">Scan de vulnérabilités</div>
+                <div class="card-body space-y-4">
+                  <div class="form-group">
+                    <label class="label">IP ou URL (optionnel)</label>
+                    <input type="text" id="vulnIp" class="input-hacking" placeholder="192.168.1.1 ou https://example.com" />
+                  </div>
+                  <div class="form-group">
+                    <label class="label">Liste CVE (une par ligne)</label>
+                    <textarea id="vulnCveList" class="input-hacking" style="min-height:8rem" placeholder="CVE-2024-1234"></textarea>
+                  </div>
+                  <button id="vulnBtn" type="button" class="btn-hacking w-full">Analyser</button>
+                </div>
+              </div>
+              <div class="card-hacking">
+                <div class="card-header">Résultats</div>
+                <div class="card-body mono" id="vulnResults" style="max-height:600px;overflow-y:auto;font-size:0.8rem"><div class="text-green-600">Aucune donnée.</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== EXTENSION NAVIGATEUR ========== -->
+          <div id="panel-extension" class="panel hidden">
+            <div class="ext-workspace">
+              <section class="ext-toolbar glass-panel">
+                <div>
+                  <h2>Extension navigateur</h2>
+                  <p>Analysez phishing et OSINT depuis n'importe quelle page web — connectée à cette instance locale.</p>
+                </div>
+                <span id="extApiStatus" class="graph-status graph-status-idle">Vérification API…</span>
+              </section>
+              <div class="ext-layout">
+                <section class="glass-panel ext-card">
+                  <div class="ws-section-title">Installation Chrome / Edge / Brave</div>
+                  <ol class="ext-steps">
+                    <li>Lancez <code>lancer_web.bat</code> (serveur sur <code>127.0.0.1:8000</code>)</li>
+                    <li>Ouvrez <code>chrome://extensions</code> ou <code>edge://extensions</code></li>
+                    <li>Activez le <strong>Mode développeur</strong></li>
+                    <li><strong>Charger l'extension non empaquetée</strong> → dossier <code>extension/</code> du projet</li>
+                  </ol>
+                  <p class="ext-path">Chemin : <code id="extFolderPath">…/phishing_guardian/extension</code></p>
+                </section>
+                <section class="glass-panel ext-card">
+                  <div class="ws-section-title">Fonctionnalités</div>
+                  <ul class="ext-features">
+                    <li>🎣 <strong>Analyse phishing</strong> de l'URL de la page active</li>
+                    <li>⚡ <strong>Playbook OSINT rapide</strong> sur email, domaine, IP ou pseudo</li>
+                    <li>🔒 Scores Attack Surface &amp; Privacy dans le popup</li>
+                    <li>📋 <strong>Menu contextuel</strong> : clic droit → OSINT sur la sélection</li>
+                    <li>🛡 Ouverture directe du dashboard Phishing Guardian</li>
+                  </ul>
+                </section>
+                <section class="glass-panel ext-card">
+                  <div class="ws-section-title">Statut extension API</div>
+                  <pre id="extStatusJson" class="ext-pre">Chargement…</pre>
+                </section>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
 
-    <script src="/static/app.js"></script>
-    <script src="/static/matrix.js"></script>
+    <script src="/static/matrix.js?v=5.1"></script>
+    <script src="/static/app.js?v=5.1"></script>
+    <script src="/static/playbooks.js?v=5.1"></script>
+    <script src="/static/investigator-ai.js?v=5.1"></script>
+    <script src="/static/graph.js?v=5.1"></script>
+    <script src="/static/timeline.js?v=5.1"></script>
+    <script src="/static/watch.js?v=5.1"></script>
+    <script src="/static/workspace.js?v=5.1"></script>
+    <script src="/static/privacy.js?v=5.1"></script>
+    <script src="/static/extension-panel.js?v=5.1"></script>
   </body>
 </html>

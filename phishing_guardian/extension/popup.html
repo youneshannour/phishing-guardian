@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Phishing Guardian</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="pg-header">
+    <div class="pg-logo">🛡</div>
+    <div>
+      <h1>Phishing Guardian</h1>
+      <p class="pg-sub">Extension OSINT</p>
+    </div>
+    <span id="statusDot" class="pg-dot offline" title="Statut API"></span>
+  </header>
+
+  <section class="pg-section">
+    <label class="pg-label" for="apiBase">API locale</label>
+    <div class="pg-row">
+      <input type="url" id="apiBase" value="http://127.0.0.1:8000" />
+      <button type="button" id="saveApiBtn" class="pg-btn-sm">OK</button>
+    </div>
+  </section>
+
+  <section class="pg-section">
+    <label class="pg-label" for="target">Cible OSINT</label>
+    <input type="text" id="target" placeholder="URL, email, domaine, IP, pseudo…" />
+    <p id="pageUrl" class="pg-hint"></p>
+  </section>
+
+  <div class="pg-actions">
+    <button type="button" id="analyzeUrlBtn" class="pg-btn primary">🎣 Analyser URL page</button>
+    <button type="button" id="playbookBtn" class="pg-btn">⚡ Playbook rapide</button>
+    <button type="button" id="openDashBtn" class="pg-btn ghost">Ouvrir le dashboard</button>
+  </div>
+
+  <div id="loader" class="pg-loader hidden">Analyse en cours…</div>
+
+  <section id="results" class="pg-results hidden">
+    <div id="resultSummary" class="pg-summary"></div>
+    <div id="resultScores" class="pg-scores"></div>
+    <ul id="resultFindings" class="pg-findings"></ul>
+    <button type="button" id="openFullBtn" class="pg-btn ghost full">Voir dans Phishing Guardian →</button>
+  </section>
+
+  <p id="error" class="pg-error hidden"></p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

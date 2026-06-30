@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Phishing Guardian OSINT",
+  "version": "1.0.0",
+  "description": "Analyse phishing et OSINT rapide depuis n'importe quelle page — connecté à votre instance Phishing Guardian locale.",
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*"
+  ],
+  "action": {
+    "default_title": "Phishing Guardian",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

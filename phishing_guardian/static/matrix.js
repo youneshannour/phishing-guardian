@@ -1,44 +1,50 @@
-// Matrix Rain Effect
-const canvas = document.getElementById('matrixCanvas');
-const ctx = canvas.getContext('2d');
+/**
+ * Matrix Rain — zone principale uniquement (style capture)
+ */
+(function () {
+  const wrap = document.querySelector(".main-matrix");
+  const canvas = document.getElementById("matrixCanvas");
+  if (!wrap || !canvas) return;
 
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+  const ctx = canvas.getContext("2d");
+  const glyphs = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜｦﾝ01";
+  const size = 15;
+  let cols = [];
+  let w = 0;
+  let h = 0;
 
-const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン';
-const charArray = chars.split('');
-
-const fontSize = 14;
-const columns = canvas.width / fontSize;
-
-const drops = [];
-for (let x = 0; x < columns; x++) {
-  drops[x] = 1;
-}
-
-function draw() {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.fillStyle = '#00ff00';
-  ctx.font = fontSize + 'px monospace';
-
-  for (let i = 0; i < drops.length; i++) {
-    const text = charArray[Math.floor(Math.random() * charArray.length)];
-    ctx.fillText(text, i * fontSize, drops[i] * fontSize);
-
-    if (drops[i] * fontSize > canvas.height && Math.random() > 0.975) {
-      drops[i] = 0;
-    }
-    drops[i]++;
+  function resize() {
+    const r = wrap.getBoundingClientRect();
+    w = Math.max(1, Math.floor(r.width));
+    h = Math.max(1, Math.floor(r.height));
+    canvas.width = w;
+    canvas.height = h;
+    const n = Math.ceil(w / size);
+    cols = Array.from({ length: n }, (_, i) => cols[i] ?? Math.random() * (h / size));
   }
-}
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
+  function frame() {
+    ctx.fillStyle = "rgba(3, 5, 8, 0.06)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.font = `${size}px "JetBrains Mono", monospace`;
 
-window.addEventListener('resize', resizeCanvas);
-setInterval(draw, 35);
+    for (let i = 0; i < cols.length; i++) {
+      const ch = glyphs[Math.floor(Math.random() * glyphs.length)];
+      const x = i * size;
+      const y = cols[i] * size;
+      const head = Math.random() > 0.988;
+      ctx.fillStyle = head
+        ? "#d4ffe0"
+        : `rgba(0, 255, ${55 + Math.floor(Math.random() * 50)}, ${0.28 + Math.random() * 0.45})`;
+      ctx.fillText(ch, x, y);
+      if (y > h && Math.random() > 0.972) cols[i] = 0;
+      cols[i]++;
+    }
+    requestAnimationFrame(frame);
+  }
 
+  resize();
+  frame();
+  window.addEventListener("resize", resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
+})();

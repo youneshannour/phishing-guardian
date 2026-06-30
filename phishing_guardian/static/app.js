@@ -1,124 +1,82 @@
 // ========== INITIALISATION ==========
 document.addEventListener("DOMContentLoaded", () => {
-  console.log("🚀 Initializing application...");
-  initTabs();
-  initPhishing();
-  initShodan();
-  initVirusTotal();
-  initAbuseIPDB();
-  initWhois();
-  initLeakCheck();
-  initExifTool();
-  initVulnerabilities();
-  updateTerminal("[SYSTEM] All modules initialized and ready.");
+  try { initNavigation(); } catch (e) { console.error("[NAV]", e); }
+  try { initPhishing(); } catch (e) { console.error("[PHISHING]", e); }
+  try { initShodan(); } catch (e) { console.error("[SHODAN]", e); }
+  try { initVirusTotal(); } catch (e) { console.error("[VT]", e); }
+  try { initAbuseIPDB(); } catch (e) { console.error("[ABUSEIPDB]", e); }
+  try { initWhois(); } catch (e) { console.error("[WHOIS]", e); }
+  try { initLeakCheck(); } catch (e) { console.error("[LEAKCHECK]", e); }
+  try { initExifTool(); } catch (e) { console.error("[EXIF]", e); }
+  try { initVulnerabilities(); } catch (e) { console.error("[VULN]", e); }
+  updateTerminal("Tous les modules initialisés et prêts.");
 });
 
-// ========== TERMINAL OUTPUT ==========
+// ========== ACTIVITY LOG ==========
 function updateTerminal(message) {
   const terminalOutput = document.getElementById("terminalOutput");
   if (terminalOutput) {
-    const time = new Date().toLocaleTimeString();
+    const time = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const newLine = document.createElement("div");
-    newLine.className = "text-green-400 text-sm font-share-tech";
-    newLine.textContent = `[${time}] ${message}`;
+    newLine.className = "log-line";
+    newLine.textContent = `${time} — ${message}`;
     terminalOutput.appendChild(newLine);
     terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    while (terminalOutput.children.length > 50) {
+      terminalOutput.removeChild(terminalOutput.firstChild);
+    }
   }
 }
+window.updateTerminal = updateTerminal;
 
-// ========== GESTION ONGLETS - VERSION SIMPLIFIÉE ET FONCTIONNELLE ==========
-function initTabs() {
-  console.log("📑 Initializing tabs...");
-  
-  // Liste de tous les panneaux
-  const allPanels = [
-    "panel-phishing",
-    "panel-shodan", 
-    "panel-virustotal",
-    "panel-abuseipdb",
-    "panel-whois",
-    "panel-leakcheck",
-    "panel-exiftool",
-    "panel-vulnerabilities"
-  ];
-  
-  // Fonction pour cacher tous les panneaux
-  function hideAllPanels() {
-    allPanels.forEach(panelId => {
-      const panel = document.getElementById(panelId);
-      if (panel) {
-        panel.classList.add("hidden");
-        console.log(`  ✓ Hidden: ${panelId}`);
-      }
-    });
+// ========== SIDEBAR NAVIGATION ==========
+function initNavigation() {
+  const pageTitle = document.getElementById("pageTitle");
+  const pageSubtitle = document.getElementById("pageSubtitle");
+
+  function getPanels() {
+    return document.querySelectorAll("main.content > .panel");
   }
-  
-  // Fonction pour afficher un panneau
-  function showPanel(panelId) {
-    const panel = document.getElementById(panelId);
-    if (panel) {
-      panel.classList.remove("hidden");
-      console.log(`  ✓ Shown: ${panelId}`);
-      return true;
-    } else {
-      console.error(`  ✗ Panel not found: ${panelId}`);
-      return false;
+
+  function activatePanel(btn) {
+    const target = btn.getAttribute("data-target");
+    if (!target) return;
+
+    document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    getPanels().forEach((panel) => panel.classList.add("hidden"));
+    document.getElementById(target)?.classList.remove("hidden");
+
+    if (pageTitle) pageTitle.textContent = btn.getAttribute("data-title") || "";
+    if (pageSubtitle) pageSubtitle.textContent = btn.getAttribute("data-subtitle") || "";
+    updateTerminal(`Module actif : ${btn.getAttribute("data-title")}`);
+
+    if (target === "panel-investigator") {
+      window.InvestigatorAI?.checkStatus?.();
     }
   }
-  
-  // Récupérer tous les boutons d'onglets
-  const tabButtons = document.querySelectorAll(".tab-hacking");
-  console.log(`  Found ${tabButtons.length} tabs`);
-  
-  if (tabButtons.length === 0) {
-    console.error("❌ No tabs found!");
-    return;
-  }
-  
-  // Ajouter les event listeners
-  tabButtons.forEach((btn, index) => {
-    const target = btn.getAttribute("data-target");
-    console.log(`  Tab ${index + 1}: ${target}`);
-    
-    btn.addEventListener("click", function(e) {
+
+  const nav = document.querySelector(".sidebar-nav");
+  if (nav) {
+    nav.addEventListener("click", (e) => {
+      const btn = e.target.closest(".nav-item[data-target]");
+      if (!btn) return;
       e.preventDefault();
       e.stopPropagation();
-      
-      console.log(`\n🖱️  Tab clicked: ${target}`);
-      
-      // 1. Retirer "active" de tous les onglets
-      tabButtons.forEach(b => b.classList.remove("active"));
-      
-      // 2. Ajouter "active" à l'onglet cliqué
-      this.classList.add("active");
-      console.log(`  ✓ Tab activated: ${target}`);
-      
-      // 3. Cacher tous les panneaux
-      hideAllPanels();
-      
-      // 4. Afficher le panneau correspondant
-      if (showPanel(target)) {
-        const moduleName = target.replace("panel-", "").toUpperCase().replace("-", "_");
-        updateTerminal(`[SYSTEM] Switched to module: ${moduleName}`);
-      } else {
-        updateTerminal(`[ERROR] Failed to switch to module: ${target}`);
-      }
+      activatePanel(btn);
     });
-  });
-  
-  // Activer le premier onglet par défaut
-  setTimeout(() => {
-    const firstTab = document.querySelector(".tab-hacking.active");
-    if (firstTab) {
-      const defaultTarget = firstTab.getAttribute("data-target");
-      if (defaultTarget) {
-        console.log(`\n🎯 Activating default tab: ${defaultTarget}`);
-        hideAllPanels();
-        showPanel(defaultTarget);
-        updateTerminal(`[SYSTEM] Default module loaded: ${defaultTarget.replace("panel-", "").toUpperCase()}`);
-      }
-    }
-  }, 300);
+  }
+
+  window.activatePGPanel = (panelId) => {
+    const btn = document.querySelector(`.nav-item[data-target="${panelId}"]`);
+    if (btn) activatePanel(btn);
+  };
+
+  const activeNav = document.querySelector(".nav-item.active[data-target]");
+  if (activeNav) {
+    activatePanel(activeNav);
+  }
 }
 
 // ========== PHISHING ANALYSIS ==========
@@ -1178,11 +1136,9 @@ function renderVulnerabilityResults(data, el) {
 
 function renderVulnerabilityError(data, el) {
   el.innerHTML = `
-    <div class="result-hacking border-red-500">
-      <div class="text-red-400 font-bold mb-2">&gt; ERROR</div>
-      <div class="text-green-400 text-xs font-share-tech">
-        <div>${data.message || "Erreur inconnue"}</div>
-      </div>
+    <div class="result-hacking" style="border-color:var(--danger)">
+      <div style="color:var(--danger);font-weight:600;margin-bottom:0.5rem">Erreur</div>
+      <div>${data.message || "Erreur inconnue"}</div>
     </div>
   `;
 }
