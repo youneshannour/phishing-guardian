@@ -1,0 +1,359 @@
+/* ============================================================
+   THEME MOCKUP — aligné sur la capture utilisateur
+   ============================================================ */
+
+:root {
+  --bg-base: #030508;
+  --sidebar-bg: #07090e;
+  --glass: rgba(7, 11, 18, 0.42);
+  --glass-border: rgba(77, 128, 255, 0.28);
+  --glass-blur: blur(10px);
+  --accent-blue: #4d80ff;
+  --accent-blue-dim: rgba(77, 128, 255, 0.14);
+  --matrix-green: #00ff41;
+  --sidebar-w: 248px;
+  --radius: 12px;
+}
+
+body {
+  background: var(--bg-base);
+}
+
+/* Matrix confiné à la zone principale */
+.main-wrapper {
+  position: relative;
+  background: #030508;
+}
+
+.main-matrix {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+#matrixCanvas {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 1 !important;
+}
+
+.main-wrapper > .topbar,
+.main-wrapper > .content {
+  position: relative;
+  z-index: 2;
+}
+
+/* Sidebar opaque — pas de matrix */
+.sidebar {
+  width: var(--sidebar-w);
+  background: var(--sidebar-bg) !important;
+  backdrop-filter: none !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.05) !important;
+  z-index: 200;
+}
+
+.main-wrapper {
+  margin-left: var(--sidebar-w);
+}
+
+.brand-text p {
+  font-size: 0.68rem !important;
+  letter-spacing: 0.12em !important;
+}
+
+.brand-icon {
+  background: linear-gradient(145deg, #4d80ff, #3b6fe8) !important;
+  box-shadow: 0 0 18px rgba(77, 128, 255, 0.5) !important;
+  border-radius: 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.brand-icon svg { display: block; }
+  box-shadow: 0 0 18px rgba(77, 128, 255, 0.5) !important;
+  border-radius: 10px !important;
+}
+
+.nav-section-label {
+  font-size: 0.62rem !important;
+  letter-spacing: 0.12em !important;
+  color: #4a5568 !important;
+  padding-top: 1rem !important;
+}
+
+.nav-item {
+  font-size: 0.8rem !important;
+  padding: 0.55rem 0.7rem !important;
+  border-radius: 8px !important;
+}
+
+.nav-item.active {
+  background: rgba(77, 128, 255, 0.16) !important;
+  color: #a8c5ff !important;
+  box-shadow: none !important;
+}
+
+.nav-item.active::before {
+  width: 3px;
+  background: var(--accent-blue);
+}
+
+/* Topbar */
+.topbar {
+  background: rgba(3, 5, 10, 0.55) !important;
+  backdrop-filter: blur(12px) !important;
+  border-bottom: 1px solid rgba(77, 128, 255, 0.1) !important;
+  height: 58px !important;
+  padding: 0 1.5rem !important;
+}
+
+.topbar-title {
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+}
+
+.topbar-subtitle {
+  font-size: 0.72rem !important;
+  color: #64748b !important;
+}
+
+.badge-version {
+  background: rgba(0, 200, 83, 0.12) !important;
+  color: #00e676 !important;
+  border: 1px solid rgba(0, 230, 118, 0.35) !important;
+  font-size: 0.65rem !important;
+  padding: 0.3rem 0.65rem !important;
+}
+
+/* Content pleine largeur */
+.content {
+  max-width: none !important;
+  padding: 1rem 1.25rem 1.5rem !important;
+}
+
+/* Panneaux glass */
+.glass-panel,
+.panel-glass {
+  background: var(--glass) !important;
+  backdrop-filter: var(--glass-blur) !important;
+  -webkit-backdrop-filter: var(--glass-blur) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--radius) !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35) !important;
+}
+
+.activity-log {
+  background: var(--glass) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--radius) !important;
+  max-height: 72px !important;
+  margin-bottom: 1rem !important;
+  padding: 0.65rem 0.9rem !important;
+}
+
+.activity-log-header {
+  font-size: 0.62rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+.activity-log-body {
+  font-size: 0.7rem !important;
+  color: #7dd3a0 !important;
+}
+
+.log-icon { color: var(--matrix-green) !important; }
+
+/* ========== PLAYBOOKS LAYOUT (mockup) ========== */
+.pb-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pb-hero {
+  padding: 1.35rem 1.5rem !important;
+  margin: 0 !important;
+}
+
+.pb-hero h2 {
+  font-size: 1.25rem !important;
+  margin-bottom: 0.35rem !important;
+}
+
+.pb-hero p {
+  font-size: 0.8rem !important;
+  margin-bottom: 1rem !important;
+  color: #94a3b8 !important;
+}
+
+.pb-search-row {
+  display: flex !important;
+  gap: 0.65rem !important;
+  align-items: stretch !important;
+}
+
+.pb-search-input-wrap { flex: 1 !important; }
+
+.pb-search-input {
+  height: 46px !important;
+  background: rgba(0, 0, 0, 0.45) !important;
+  border: 1px solid rgba(77, 128, 255, 0.22) !important;
+  border-radius: 10px !important;
+  font-size: 0.85rem !important;
+}
+
+.pb-run-btn {
+  height: 46px !important;
+  padding: 0 1.35rem !important;
+  background: linear-gradient(180deg, #5b8fff 0%, #4d80ff 50%, #3d6fe8 100%) !important;
+  border-radius: 10px !important;
+  font-size: 0.85rem !important;
+  box-shadow: 0 4px 20px rgba(77, 128, 255, 0.45) !important;
+  flex-shrink: 0;
+}
+
+.pb-target-meta {
+  margin-top: 0.65rem !important;
+}
+
+.pb-target-type {
+  font-size: 0.7rem !important;
+  color: #64748b !important;
+}
+
+/* Split 38% / 62% */
+.pb-layout {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 36%) 1fr !important;
+  gap: 1rem !important;
+  align-items: stretch !important;
+  min-height: 420px;
+}
+
+.pb-col-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pb-col-label {
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #64748b;
+  padding: 0 0.25rem;
+}
+
+.pb-playbook-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.pb-playbook-card {
+  background: rgba(0, 0, 0, 0.35) !important;
+  border: 1px solid rgba(77, 128, 255, 0.2) !important;
+  border-radius: 10px !important;
+  padding: 0.85rem 1rem !important;
+  opacity: 1 !important;
+  animation: none !important;
+}
+
+.pb-playbook-card:hover {
+  transform: none !important;
+  border-color: rgba(77, 128, 255, 0.4) !important;
+}
+
+.pb-playbook-card.selected {
+  border-color: rgba(77, 128, 255, 0.75) !important;
+  background: rgba(77, 128, 255, 0.1) !important;
+  box-shadow: 0 0 16px rgba(77, 128, 255, 0.2) !important;
+}
+
+.pb-playbook-icon {
+  width: 34px !important;
+  height: 34px !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  border-radius: 8px !important;
+  font-size: 1rem !important;
+}
+
+.pb-playbook-info h4 {
+  font-size: 0.82rem !important;
+  color: #e2e8f0 !important;
+}
+
+.pb-playbook-info p {
+  font-size: 0.7rem !important;
+  line-height: 1.35 !important;
+}
+
+.pb-tag {
+  font-size: 0.58rem !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #64748b !important;
+}
+
+/* Panneau résultats droite */
+.pb-col-right,
+#playbookResults {
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+}
+
+#playbookResults .pb-empty-state {
+  flex: 1;
+  min-height: 380px;
+  justify-content: center;
+}
+
+.pb-empty-icon {
+  width: 64px !important;
+  height: 64px !important;
+  font-size: 1.75rem !important;
+  background: rgba(77, 128, 255, 0.08) !important;
+  border: 1px solid rgba(77, 128, 255, 0.25) !important;
+  animation: none !important;
+}
+
+.pb-empty-state h3 {
+  font-size: 0.95rem !important;
+  color: #cbd5e1 !important;
+}
+
+.pb-empty-state p {
+  font-size: 0.75rem !important;
+  color: #64748b !important;
+  max-width: 280px !important;
+}
+
+/* Retirer wrapper card playbooks */
+.pb-layout .card {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+}
+
+.pb-layout .card-header,
+.pb-layout .card-body {
+  padding: 0 !important;
+}
+
+.pb-layout .card-header { display: none !important; }
+
+/* Désactiver animations entrée qui décalent le rendu */
+.pb-hero,
+.pb-layout,
+.sidebar,
+.main-wrapper {
+  animation: none !important;
+}

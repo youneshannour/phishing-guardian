@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Connexion — Phishing Guardian</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="Accès sécurisé à la plateforme OSINT Phishing Guardian" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/login.css?v=2" />
+  </head>
+  <body>
+    <div class="login-stage" aria-hidden="true">
+      <div class="login-glow login-glow-a"></div>
+      <div class="login-glow login-glow-b"></div>
+      <div class="login-grid"></div>
+      <div class="login-noise"></div>
+    </div>
+
+    <div class="login-layout">
+      <main class="login-main">
+        <header class="login-brand">
+          <div class="login-shield" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none">
+              <path d="M12 2L4 5.5V11c0 5.25 3.4 10.15 8 11.5 4.6-1.35 8-6.25 8-11.5V5.5L12 2z" fill="currentColor"/>
+            </svg>
+          </div>
+          <p class="login-product">Phishing Guardian</p>
+          <h1 class="login-title">Espace d’investigation</h1>
+          <p class="login-lead">Une porte d’entrée unique vers playbooks, intel et surveillance OSINT.</p>
+        </header>
+
+        <form id="loginForm" class="login-form" autocomplete="on" novalidate>
+          <label class="login-field">
+            <span>Identifiant</span>
+            <input id="username" name="username" type="text" autocomplete="username" required placeholder="admin" />
+          </label>
+          <label class="login-field">
+            <span>Mot de passe</span>
+            <input id="password" name="password" type="password" autocomplete="current-password" required placeholder="••••••••" />
+          </label>
+          <p id="loginError" class="login-error" hidden role="alert"></p>
+          <button type="submit" class="login-submit" id="loginBtn">
+            <span>Entrer dans la plateforme</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </form>
+
+        <p class="login-hint">Session locale · 7 jours · credentials <code>.env</code></p>
+      </main>
+
+      <aside class="login-visual" aria-hidden="true">
+        <div class="radar-ring radar-ring-a"></div>
+        <div class="radar-ring radar-ring-b"></div>
+        <div class="radar-ring radar-ring-c"></div>
+        <div class="radar-beam"></div>
+        <div class="radar-core"></div>
+        <div class="radar-hud">
+          <span>SIGINT / OSINT</span>
+          <span>LIVE FEEDS</span>
+          <span>TRIAGE READY</span>
+        </div>
+      </aside>
+    </div>
+
+    <script src="/static/login.js?v=2"></script>
+  </body>
+</html>

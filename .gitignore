@@ -1,0 +1,44 @@
+# Secrets & env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# App data / caches
+data/
+*.db
+*.sqlite3
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs & temp
+*.log
+_tmp/
+tmp/
+*.tmp
+_strip*.py
+_fix*.py
+_reindent*.py
+_clean*.py
+
+# Build
+dist/
+build/
+*.zip
