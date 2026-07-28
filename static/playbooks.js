@@ -226,7 +226,7 @@ const PlaybooksUI = (() => {
  saveHistory(data);
  renderHistory();
  renderDashboard(data);
- const asScore = data.synthesis?.attack_surface?.score "N/A";
+ const asScore = data.synthesis?.attack_surface?.score ?? "N/A";
  window.updateTerminal?.(`Investigation terminée (${data.duration_ms}ms) — surface d'attaque ${asScore}/100`);
  } catch (err) {
  stopLoadingAnimation();
@@ -438,7 +438,7 @@ const PlaybooksUI = (() => {
  <div class="pb-privacy pb-attack-surface">
  <div class="pb-section-title">Privacy Score personnel</div>
  <p class="as-summary">${esc(ps.summary || "")}</p>
- <p class="pv-exposure-line">Exposition totale : <strong>${ps.exposure_total 0}/100</strong></p>
+ <p class="pv-exposure-line">Exposition totale : <strong>${ps.exposure_total ?? 0}/100</strong></p>
  <div class="as-factors">
  ${factors.map((f) => `
  <div class="as-factor as-sev-${f.severity || "info"}">
@@ -596,9 +596,9 @@ const PlaybooksUI = (() => {
  const r = d.records || {};
  return `A ${(r.A || []).length} · MX ${(r.MX || []).length} · NS ${(r.NS || []).length}`;
  },
- email_auth: () => `Score auth ${d.auth_score "?"} · ${(d.findings || []).slice(0, 2).join(" · ") || "N/A"}`,
+ email_auth: () => `Score auth ${d.auth_score ?? "?"} · ${(d.findings || []).slice(0, 2).join(" · ") || "N/A"}`,
  crtsh: () => `${d.certificate_count || 0} cert(s) · ${d.name_count || 0} nom(s)`,
- phishing_analyze: () => `${d.label || d.risk_level || "n/a"} · score ${d.score "—"}`,
+ phishing_analyze: () => `${d.label || d.risk_level || "n/a"} · score ${d.score ?? "—"}`,
  hibp_osint: () => (d.found || d.data?.password_pwned) ? "Indicateur de fuite" : "Pas de fuite détectée",
  blocklist_check: () => d.listed
  ? `Listé (${(d.sources_hit || []).join(", ") || "feed"})`
@@ -684,8 +684,8 @@ const PlaybooksUI = (() => {
  `Cible : ${lastResult.target} (${lastResult.target_type})`,
  `Durée : ${formatDuration(lastResult.duration_ms)}`,
  `Risque : ${(s.overall_risk || "low").toUpperCase()}`,
- `Attack Surface : ${s.attack_surface?.score "N/A"}/100 (${s.attack_surface?.grade_label || "N/A"})`,
- `Privacy Score : ${s.privacy_score?.score "N/A"}/100 (${s.privacy_score?.grade_label || "N/A"})`,
+ `Attack Surface : ${s.attack_surface?.score ?? "N/A"}/100 (${s.attack_surface?.grade_label || "N/A"})`,
+ `Privacy Score : ${s.privacy_score?.score ?? "N/A"}/100 (${s.privacy_score?.grade_label || "N/A"})`,
  ``,
  `CONSTATS :`,
  ...(s.key_findings || []).map((f) => ` • ${f}`),
@@ -767,6 +767,8 @@ const PlaybooksUI = (() => {
 
  return { init };
 })();
+
+window.PlaybooksUI = PlaybooksUI;
 
 document.addEventListener("DOMContentLoaded", () => {
  try { PlaybooksUI.init(); } catch (e) { console.error("[PLAYBOOKS]", e); }

@@ -50,7 +50,7 @@
     canvas.width = w;
     canvas.height = h;
     const n = Math.ceil(w / size);
-    cols = Array.from({ length: n }, (_, i) => cols[i] Math.random() * (h / size));
+    cols = Array.from({ length: n }, (_, i) => (cols[i] ?? Math.random()) * (h / size));
   }
 
   function frame() {

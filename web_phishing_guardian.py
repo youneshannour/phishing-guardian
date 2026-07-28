@@ -7,14 +7,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, List, Optional
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Header
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+import logging
+import asyncio
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Header, Depends
+from fastapi.responses import HTMLResponse, JSONResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import requests
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 # Imports pour OCR
 try:
@@ -52,8 +56,18 @@ from services.report_service import (
 from services.watch_service import watch_service
 from services.workspace_service import workspace_service
 from plugins.osint.registry import list_plugins
+from services.api_auth import API_KEY, APIKeyMiddleware, default_cors_origins
+from services.session_auth import (
+    COOKIE_NAME,
+    cookie_settings,
+    create_session_token,
+    session_username_from_request,
+    verify_credentials,
+)
 
 load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 BASE_DIR = Path(__file__).parent
 
@@ -61,18 +75,31 @@ BASE_DIR = Path(__file__).parent
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     watch_service.start_scheduler()
+
+    def _warm_feeds():
+        try:
+            from services.threat_feeds import refresh_openphish
+            refresh_openphish(force=False)
+        except Exception as exc:
+            logger.warning("Warm-up OpenPhish failed: %s", exc)
+
+    try:
+        asyncio.create_task(asyncio.to_thread(_warm_feeds))
+    except Exception:
+        pass
     yield
     await watch_service.stop_scheduler()
 
 
 app = FastAPI(title="Phishing Guardian - OSINT Platform", lifespan=lifespan)
 
+app.add_middleware(APIKeyMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_credentials=False,
+    allow_origins=default_cors_origins(),
+    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*", "X-PG-User"],
+    allow_headers=["*", "X-PG-User", "X-PG-API-Key", "Authorization"],
 )
 
 EXTENSION_DIR = BASE_DIR / "extension"
@@ -243,22 +270,70 @@ class NoteCreateRequest(BaseModel):
     case_id: Optional[str] = None
 
 
-def _pg_user(x_pg_user: Optional[str] = Header(None, alias="X-PG-User")) -> str:
-    if not x_pg_user or not x_pg_user.strip():
+def _pg_user(
+    request: Request,
+    x_pg_user: Optional[str] = Header(None, alias="X-PG-User"),
+) -> str:
+    raw = (x_pg_user or "").strip() or (session_username_from_request(request) or "")
+    if not raw:
         raise HTTPException(
             status_code=401,
-            detail="En-tête X-PG-User requis — définissez votre nom dans l'onglet Workspace",
+            detail="Authentification requise",
         )
     try:
-        return workspace_service.normalize_username(x_pg_user)
+        return workspace_service.normalize_username(raw)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-# ========== ROUTES ==========
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+# ========== AUTH ROUTES ==========
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    if session_username_from_request(request):
+        return RedirectResponse(url="/", status_code=302)
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.post("/api/auth/login")
+async def api_auth_login(body: LoginRequest):
+    if not verify_credentials(body.username, body.password):
+        raise HTTPException(status_code=401, detail="Identifiants invalides")
+    token = create_session_token(body.username.strip())
+    resp = JSONResponse({"ok": True, "username": body.username.strip()})
+    resp.set_cookie(value=token, **cookie_settings())
+    return resp
+
+
+@app.get("/api/auth/me")
+async def api_auth_me(request: Request):
+    user = session_username_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Non connecte")
+    return {"username": user}
+
+
+@app.post("/api/auth/logout")
+async def api_auth_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(key=COOKIE_NAME, path="/")
+    return resp
+
+
+# ========== MAIN ROUTES ==========
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    user = session_username_from_request(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    return templates.TemplateResponse(
+        "index.html",
+        {"request": request, "api_key": API_KEY, "username": user},
+    )
 
 
 @app.post("/api/analyze-image")

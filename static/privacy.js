@@ -38,7 +38,7 @@ const PrivacyUI = (() => {
       meta.innerHTML = `
         <span>Cible : <code>${esc(investigation?.target || ps.target)}</code></span>
         <span>Type : ${esc(investigation?.target_type || ps.target_type)}</span>
-        <span>Exposition : ${ps.exposure_total 0}/100</span>`;
+        <span>Exposition : ${ps.exposure_total ?? 0}/100</span>`;
     }
 
     const gauge = document.getElementById("pvGauge");

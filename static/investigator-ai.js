@@ -191,11 +191,11 @@ const InvestigatorAI = (() => {
  </div>
  <div class="ai-inv-risk" style="--risk-color:${riskColor}">
  <span class="label">Surface</span>
- <span class="value" style="color:${as.color || riskColor}">${as.score "—"}/100</span>
+ <span class="value" style="color:${as.color || riskColor}">${as.score ?? "—"}/100</span>
  </div>
  <div class="ai-inv-risk">
  <span class="label">Privacy</span>
- <span class="value" style="color:${ps.color || '#22c55e'}">${ps.score "—"}/100</span>
+ <span class="value" style="color:${ps.color || '#22c55e'}">${ps.score ?? "—"}/100</span>
  </div>
  </div>
  <div class="ai-inv-as-grade" style="color:${as.color || '#94a3b8'}">${esc(as.grade_label || "")} · <span style="color:${ps.color || '#22c55e'}">${esc(ps.grade_label || "")}</span></div>

@@ -60,8 +60,8 @@ async function refreshSystemHealth() {
  const res = await fetch("/api/health");
  const data = await res.json();
  const mods = data.modules || {};
- const critical = ["phishing", "playbooks", "dns_lookup", "email_auth", "blocklist_check"];
- const optional = ["shodan", "virustotal", "abuseipdb", "exiftool", "investigator_ai", "pdf_export"];
+ const critical = ["phishing", "playbooks"];
+ const optional = ["shodan", "virustotal", "abuseipdb", "exiftool", "investigator_ai", "pdf_export", "sherlock"];
  const critOk = critical.every((k) => mods[k]);
  const missingOpt = optional.filter((k) => !mods[k]);
  const label = critOk

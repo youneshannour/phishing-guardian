@@ -73,7 +73,7 @@ const WatchUI = (() => {
  renderWatches();
  renderAlerts();
  renderStats(wData.status || {});
- const unread = aData.unread_count 0;
+ const unread = aData.unread_count ?? 0;
  updateNavBadge(unread);
  notifyNewAlerts(unread, alerts);
  setStatus(`${watches.length} surveillance(s) · ${unread} alerte(s) non lue(s)`);
