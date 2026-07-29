@@ -906,10 +906,22 @@ class PhishingGuardian:
         self, email_text: Optional[str] = None, urls: Optional[List[str]] = None
     ) -> AnalysisReport:
         report = AnalysisReport()
+        # Auto-extraire les URLs du corps email si absentes du champ dédié
+        merged_urls: List[str] = list(urls or [])
         if email_text:
             report.email_result = self.email_detector.assess(email_text)
-        if urls:
-            report.url_results = [self.url_detector.assess(url) for url in urls]
+            seen = {u.strip().lower() for u in merged_urls if u}
+            for match in re.findall(r"https?://[^\s\)\]\"'<>]+", email_text, flags=re.I):
+                clean = match.strip().rstrip(".,;:)")
+                key = clean.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                merged_urls.append(clean)
+                if len(merged_urls) >= 8:
+                    break
+        if merged_urls:
+            report.url_results = [self.url_detector.assess(url) for url in merged_urls]
         return report
 
     def train_models(

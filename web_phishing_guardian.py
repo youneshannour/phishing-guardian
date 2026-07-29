@@ -539,25 +539,37 @@ async def api_analyze_image(file: UploadFile = File(...)) -> Any:
 
 @app.post("/api/analyze")
 async def api_analyze(payload: AnalyzeRequest) -> Any:
-    """Analyse phishing avancée email/URLs avec enrichissement."""
-    report = guardian.analyze(
-        email_text=payload.email or None,
-        urls=payload.urls or None,
-    )
-    
-    result = report.as_dict()
-    
-    # Enrichir avec des statistiques avancées
-    result["statistics"] = {
-        "total_urls_analyzed": len(result.get("urls", [])),
-        "phishing_urls": len([u for u in result.get("urls", []) if u.get("label") == "phishing"]),
-        "legitimate_urls": len([u for u in result.get("urls", []) if u.get("label") == "legitimate"]),
-        "email_analyzed": bool(result.get("email")),
-        "email_is_phishing": result.get("email", {}).get("label") == "phishing" if result.get("email") else False,
-        "max_score": result.get("synthetique", {}).get("score", 0),
-    }
-    
-    return result
+    """Analyse phishing avancée email/URLs avec enrichissement multi-sources."""
+    email_text = payload.email or None
+    urls = payload.urls or None
+
+    def _run() -> dict:
+        from services.phishing_enrichment import enrich_phishing_report
+
+        report = guardian.analyze(email_text=email_text, urls=urls)
+        result = report.as_dict()
+        enrich_phishing_report(result, email_text=email_text, urls=urls)
+
+        url_rows = result.get("urls") or []
+        result["statistics"] = {
+            "total_urls_analyzed": len(url_rows),
+            "phishing_urls": len([u for u in url_rows if u.get("label") == "phishing"]),
+            "legitimate_urls": len(
+                [u for u in url_rows if u.get("label") in ("legitime", "legitimate")]
+            ),
+            "email_analyzed": bool(result.get("email")),
+            "email_is_phishing": (
+                result.get("email", {}).get("label") == "phishing"
+                if result.get("email")
+                else False
+            ),
+            "max_score": result.get("synthetique", {}).get("score", 0),
+            "intel_boost": result.get("synthetique", {}).get("boost_intel", 0),
+            "sources_ok": (result.get("enrichment") or {}).get("sources_ok") or [],
+        }
+        return result
+
+    return await asyncio.to_thread(_run)
 
 
 @app.post("/api/shodan/ip")

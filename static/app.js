@@ -394,14 +394,72 @@ function renderPhishingResult(data) {
  ${stats.legitimate_urls !== undefined ? `<div>LEGITIMATE_URLS: <span class="text-green-300">${stats.legitimate_urls}</span></div>` : ""}
  ${stats.email_analyzed !== undefined ? `<div>EMAIL_ANALYZED: ${stats.email_analyzed ? "YES" : "NO"}</div>` : ""}
  ${stats.email_is_phishing !== undefined ? `<div>EMAIL_PHISHING: <span class="${stats.email_is_phishing ? 'text-red-400' : 'text-green-300'}">${stats.email_is_phishing ? "YES" : "NO"}</span></div>` : ""}
+ ${stats.intel_boost !== undefined ? `<div>INTEL_BOOST: <span class="text-amber-300">+${Number(stats.intel_boost || 0).toFixed(3)}</span></div>` : ""}
+ ${(stats.sources_ok || []).length ? `<div>INTEL_SOURCES: <span class="text-green-300">${stats.sources_ok.join(", ")}</span></div>` : ""}
  </div>
  </div>
  ` : ""}
- <div class="text-green-600 text-xs mt-2">&gt; Calculated from max risk between email and URLs</div>
+ <div class="text-green-600 text-xs mt-2">&gt; Heuristics + threat intel fusion (blocklists / VT / WHOIS / SPF-DMARC)</div>
  </div>
  `;
 
  detailsEl.innerHTML = "";
+
+ const enr = data.enrichment;
+ if (enr) {
+ const intel = document.createElement("div");
+ intel.className = "result-hacking mb-3";
+ const bl = enr.blocklist;
+ const vt = enr.virustotal;
+ const auth = enr.email_auth;
+ const whois = enr.whois;
+ const boosts = enr.boosts || [];
+ intel.innerHTML = `
+ <div class="text-green-500 font-bold mb-2">&gt; THREAT_INTEL</div>
+ <div class="text-green-400 text-xs font-share-tech space-y-1">
+ <div>SOURCES_OK: <span class="text-green-300">${(enr.sources_ok || []).join(", ") || "—"}</span></div>
+ ${(enr.sources_failed || []).length ? `<div>SOURCES_FAILED: <span class="text-yellow-400">${enr.sources_failed.join(", ")}</span></div>` : ""}
+ ${(enr.auto_extracted_urls || []).length ? `<div class="mt-1">AUTO_URLS:<ul class="list-disc list-inside ml-4">${enr.auto_extracted_urls.map((u) => `<li class="text-green-300 break-all font-mono">${u}</li>`).join("")}</ul></div>` : ""}
+ ${bl ? `
+ <div class="mt-2 pt-2 border-t border-green-500/30">
+ <div class="text-green-500 font-bold mb-1">&gt; BLOCKLIST</div>
+ <div>LISTED: <span class="${bl.listed ? "text-red-400 font-bold" : "text-green-300"}">${bl.listed ? "YES" : "NO"}</span>
+ ${(bl.sources_hit || []).length ? ` · ${(bl.sources_hit || []).join(", ")}` : ""}</div>
+ ${(bl.findings || []).slice(0, 3).map((f) => `<div class="text-green-300">• ${f}</div>`).join("")}
+ </div>` : ""}
+ ${vt ? `
+ <div class="mt-2 pt-2 border-t border-green-500/30">
+ <div class="text-green-500 font-bold mb-1">&gt; VIRUSTOTAL</div>
+ <div>DETECTIONS: <span class="${(vt.detections || 0) > 0 ? "text-red-400 font-bold" : "text-green-300"}">${vt.detections || 0}/${vt.total || 0}</span>
+ ${vt.risk_level ? ` · RISK ${String(vt.risk_level).toUpperCase()}` : ""}</div>
+ ${vt.query ? `<div>QUERY: <span class="font-mono text-green-300 break-all">${vt.query}</span></div>` : ""}
+ ${vt.message ? `<div class="text-yellow-400">${vt.message}</div>` : ""}
+ </div>` : ""}
+ ${auth ? `
+ <div class="mt-2 pt-2 border-t border-green-500/30">
+ <div class="text-green-500 font-bold mb-1">&gt; EMAIL_AUTH</div>
+ <div>DOMAIN: <span class="font-mono text-green-300">${auth.domain || "—"}</span> · SCORE ${auth.auth_score ?? "?"}
+ · SPF ${auth.spf ? "OK" : "NO"} · DMARC ${auth.dmarc ? "OK" : "NO"}
+ · DKIM ${(auth.dkim_selectors || []).length ? (auth.dkim_selectors || []).join(",") : "NO"}</div>
+ ${(auth.findings || []).slice(0, 4).map((f) => `<div class="text-green-300">• ${f}</div>`).join("")}
+ </div>` : ""}
+ ${whois ? `
+ <div class="mt-2 pt-2 border-t border-green-500/30">
+ <div class="text-green-500 font-bold mb-1">&gt; WHOIS_AGE</div>
+ <div>DOMAIN: <span class="font-mono text-green-300">${whois.domain || "—"}</span></div>
+ <div>AGE: <span class="${whois.age_days != null && whois.age_days < 30 ? "text-red-400 font-bold" : "text-green-300"}">${whois.age_days != null ? whois.age_days + " jours" : "N/A"}</span>
+ ${whois.registrar ? ` · ${whois.registrar}` : ""}</div>
+ ${whois.creation_date ? `<div>CREATED: ${whois.creation_date}</div>` : ""}
+ </div>` : ""}
+ ${boosts.length ? `
+ <div class="mt-2 pt-2 border-t border-green-500/30">
+ <div class="text-green-500 font-bold mb-1">&gt; SCORE_BOOSTS</div>
+ ${boosts.map((b) => `<div class="text-amber-300">+${Number(b.delta).toFixed(3)} — ${b.reason}</div>`).join("")}
+ </div>` : ""}
+ </div>
+ `;
+ detailsEl.appendChild(intel);
+ }
 
  if (data.email) {
  const e = data.email;
