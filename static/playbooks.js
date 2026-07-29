@@ -88,6 +88,7 @@ const PlaybooksUI = (() => {
  switch (btn.id) {
  case "pbViewGraph":
  window.GraphUI?.loadFromInvestigation(lastResult);
+ window.GraphUI?.showPanel?.();
  break;
  case "pbViewTimeline":
  window.TimelineUI?.loadFromInvestigation(lastResult);
@@ -791,7 +792,17 @@ const PlaybooksUI = (() => {
  return d.innerHTML;
  }
 
- return { init };
+ function getLastResult() {
+ return lastResult;
+ }
+
+ function getLatestHistoryResult() {
+ if (lastResult) return lastResult;
+ const list = loadHistory();
+ return list[0]?.result || null;
+ }
+
+ return { init, getLastResult, getLatestHistoryResult };
 })();
 
 window.PlaybooksUI = PlaybooksUI;

@@ -6,27 +6,109 @@ const PrivacyUI = (() => {
 
   function init() {
     document.getElementById("pvClearBtn")?.addEventListener("click", clearPanel);
+    document.getElementById("pvLoadLastBtn")?.addEventListener("click", () => {
+      refreshFromLast({ force: true });
+    });
+    document.getElementById("pvGauge")?.addEventListener("click", (e) => {
+      if (e.target.closest("[data-pv-load]")) {
+        e.preventDefault();
+        refreshFromLast({ force: true });
+      }
+    });
   }
 
-  function loadFromInvestigation(investigation) {
-    const ps = investigation?.synthesis?.privacy_score;
-    if (ps) {
-      render(ps, investigation);
-      showPanel();
+  function resolveInvestigation(explicit) {
+    if (explicit) return explicit;
+    return (
+      window.PlaybooksUI?.getLatestHistoryResult?.() ||
+      window.PlaybooksUI?.getLastResult?.() ||
+      null
+    );
+  }
+
+  function loadFromInvestigation(investigation, opts = {}) {
+    const navigate = opts.navigate !== false;
+    const inv = resolveInvestigation(investigation);
+    if (!inv) {
+      setStatus("Aucune investigation");
+      showEmpty("Lancez une investigation dans Playbooks, puis revenez ici.");
+      if (navigate) showPanel();
       return;
     }
+
+    const ps = inv?.synthesis?.privacy_score;
+    if (ps && typeof ps.score === "number") {
+      render(ps, inv);
+      if (navigate) showPanel();
+      return;
+    }
+
+    setStatus("Calcul…");
     fetch("/api/privacy/from-investigation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ investigation }),
+      credentials: "same-origin",
+      body: JSON.stringify({ investigation: inv }),
     })
       .then((r) => r.json().then((d) => ({ ok: r.ok, d })))
       .then(({ ok, d }) => {
-        if (!ok) throw new Error(d.detail || "Erreur");
-        render(d, investigation);
-        showPanel();
+        if (!ok) {
+          const detail = d.detail;
+          const msg = typeof detail === "string" ? detail : (detail?.[0]?.msg || "Erreur API");
+          throw new Error(msg);
+        }
+        if (inv.synthesis) inv.synthesis.privacy_score = d;
+        else inv.synthesis = { privacy_score: d };
+        render(d, inv);
+        if (navigate) showPanel();
       })
-      .catch((err) => setStatus(`Erreur : ${err.message}`));
+      .catch((err) => {
+        setStatus(`Erreur`);
+        showEmpty(`Impossible de calculer le Privacy Score : ${err.message}`);
+        if (navigate) showPanel();
+      });
+  }
+
+  function refreshFromLast(opts = {}) {
+    const inv = resolveInvestigation(null);
+    if (!inv) {
+      if (opts.force) {
+        setStatus("Aucune investigation");
+        showEmpty("Aucune investigation récente. Lancez un playbook d’abord.");
+      }
+      return false;
+    }
+    if (
+      !opts.force &&
+      current?.ps &&
+      current?.investigation?.target &&
+      current.investigation.target === inv.target
+    ) {
+      return true;
+    }
+    loadFromInvestigation(inv, { navigate: false });
+    return true;
+  }
+
+  function showEmpty(message) {
+    const gauge = document.getElementById("pvGauge");
+    if (gauge) {
+      gauge.innerHTML = `
+        <div class="pv-empty">
+          <p>${esc(message || "Aucune donnée.")}</p>
+          <button type="button" class="pb-export-btn" data-pv-load style="margin-top:12px">
+            Charger la dernière investigation
+          </button>
+        </div>`;
+    }
+    const factors = document.getElementById("pvFactors");
+    const recs = document.getElementById("pvRecs");
+    const summary = document.getElementById("pvSummary");
+    const meta = document.getElementById("pvMeta");
+    if (factors) factors.innerHTML = "";
+    if (recs) recs.innerHTML = "";
+    if (summary) summary.textContent = "";
+    if (meta) meta.innerHTML = "";
   }
 
   function render(ps, investigation) {
@@ -113,11 +195,7 @@ const PrivacyUI = (() => {
   function clearPanel() {
     current = null;
     setStatus("Prêt");
-    document.getElementById("pvMeta").innerHTML = "";
-    document.getElementById("pvGauge").innerHTML = `<div class="pv-empty">Lancez une investigation puis ouvrez Privacy depuis Playbooks.</div>`;
-    document.getElementById("pvSummary").textContent = "";
-    document.getElementById("pvFactors").innerHTML = "";
-    document.getElementById("pvRecs").innerHTML = "";
+    showEmpty("Lancez une investigation dans Playbooks, puis ouvrez Privacy.");
   }
 
   function setStatus(text) {
@@ -140,7 +218,7 @@ const PrivacyUI = (() => {
     return d.innerHTML;
   }
 
-  return { init, loadFromInvestigation, showPanel };
+  return { init, loadFromInvestigation, refreshFromLast, showPanel };
 })();
 
 window.PrivacyUI = PrivacyUI;

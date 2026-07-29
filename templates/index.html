@@ -259,6 +259,7 @@
  </div>
  <div class="pv-toolbar-actions">
  <span id="pvStatus" class="graph-status graph-status-idle">Prêt</span>
+ <button type="button" id="pvLoadLastBtn" class="pb-export-btn">Charger dernière</button>
  <button type="button" id="pvClearBtn" class="pb-export-btn">Effacer</button>
  </div>
  </section>
@@ -266,7 +267,10 @@
  <div class="pv-layout">
  <div class="pv-gauge-wrap glass-panel">
  <div id="pvGauge" class="pv-gauge">
- <div class="pv-empty">Lancez une investigation puis ouvrez Privacy depuis Playbooks.</div>
+ <div class="pv-empty">
+ <p>Lancez une investigation dans Playbooks, ou chargez la dernière depuis l’historique.</p>
+ <button type="button" class="pb-export-btn" data-pv-load style="margin-top:12px">Charger la dernière investigation</button>
+ </div>
  </div>
  <p id="pvSummary" class="pv-summary"></p>
  </div>
@@ -762,14 +766,14 @@
  <script src="/static/theme.js?v=8.5"></script>
  <script src="/static/matrix.js?v=8.5"></script>
  <script src="/static/effects.js?v=8.5"></script>
- <script src="/static/app.js?v=8.5"></script>
- <script src="/static/playbooks.js?v=8.6"></script>
+ <script src="/static/app.js?v=8.7"></script>
+ <script src="/static/playbooks.js?v=8.7"></script>
  <script src="/static/investigator-ai.js?v=8.5"></script>
  <script src="/static/graph.js?v=8.5"></script>
- <script src="/static/timeline.js?v=8.5"></script>
+ <script src="/static/timeline.js?v=8.7"></script>
  <script src="/static/watch.js?v=8.5"></script>
  <script src="/static/workspace.js?v=8.5"></script>
- <script src="/static/privacy.js?v=8.5"></script>
+ <script src="/static/privacy.js?v=8.7"></script>
  <script src="/static/extension-panel.js?v=8.5"></script>
  </body>
 </html>

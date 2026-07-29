@@ -151,6 +151,17 @@ function initNavigation() {
  if (target === "panel-investigator") {
  window.InvestigatorAI?.checkStatus?.();
  }
+ if (target === "panel-privacy") {
+ window.PrivacyUI?.refreshFromLast?.();
+ }
+ if (target === "panel-graph") {
+ const inv = window.PlaybooksUI?.getLatestHistoryResult?.();
+ if (inv) window.GraphUI?.loadFromInvestigation?.(inv);
+ }
+ if (target === "panel-timeline") {
+ const inv = window.PlaybooksUI?.getLatestHistoryResult?.();
+ if (inv) window.TimelineUI?.loadFromInvestigation?.(inv, { navigate: false });
+ }
  }
 
  const nav = document.querySelector(".sidebar-nav");

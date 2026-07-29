@@ -10,11 +10,12 @@ const TimelineUI = (() => {
  document.getElementById("tlClearBtn")?.addEventListener("click", clearTimeline);
  }
 
- function loadFromInvestigation(investigation) {
+ function loadFromInvestigation(investigation, opts = {}) {
+ const navigate = opts.navigate !== false;
  const tl = investigation?.synthesis?.timeline;
  if (tl) {
  renderTimeline(tl);
- showPanel();
+ if (navigate) showPanel();
  return;
  }
 
@@ -27,7 +28,7 @@ const TimelineUI = (() => {
  .then(({ ok, d }) => {
  if (!ok) throw new Error(d.detail || "Erreur");
  renderTimeline(d);
- showPanel();
+ if (navigate) showPanel();
  })
  .catch((err) => setStatus(`Erreur : ${err.message}`));
  }
