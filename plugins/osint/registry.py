@@ -112,7 +112,7 @@ class SherlockPlugin(OSINTPlugin):
         Entity(EntityType.USERNAME, data["username"], self.id),
       ]
       for site, info in (data.get("profiles") or {}).items():
-        url = info.get("url_main") or info.get("url_user")
+        url = info.get("url_main") or info.get("url_user") or info.get("url")
         if url:
           entities.append(
             Entity(

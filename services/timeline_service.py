@@ -216,7 +216,7 @@ def _events_from_sherlock(step: Dict[str, Any]) -> List[Dict[str, Any]]:
     for site, info in list(profiles.items())[:12]:
         url = ""
         if isinstance(info, dict):
-            url = info.get("url_main") or info.get("url_user") or ""
+            url = info.get("url_main") or info.get("url_user") or info.get("url") or ""
         events.append(
             _make_event(
                 occurred_at=now,

@@ -813,68 +813,20 @@ async def api_sherlock(payload: SherlockRequest) -> Any:
     username = payload.username.strip()
     if not username:
         raise HTTPException(status_code=400, detail="Nom d'utilisateur vide")
-    
-    # Essayer d'abord avec la commande directe, puis avec python -m
-    sherlock_cmd = None
-    for cmd in [["sherlock"], ["python", "-m", "sherlock"]]:
-        try:
-            result = subprocess.run(
-                cmd + ["--version"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0 or "sherlock" in result.stdout.lower() or "sherlock" in result.stderr.lower():
-                sherlock_cmd = cmd
-                break
-        except FileNotFoundError:
-            continue
-    
-    if not sherlock_cmd:
-        raise HTTPException(
-            status_code=503,
-            detail="Sherlock non installé. Installez-le: pip install sherlock-project",
-        )
-    
     try:
-        # Lancer sherlock avec JSON output
-        result = subprocess.run(
-            sherlock_cmd + ["--no-color", "--json", username],
-            capture_output=True,
-            text=True,
-            timeout=120,  # Sherlock peut prendre du temps
-        )
-        
-        # Parser JSON (même si returncode != 0, il peut y avoir des résultats)
-        profiles = {}
-        output_lines = result.stdout.split("\n") if result.stdout else []
-        
-        # Chercher la ligne JSON dans la sortie
-        for line in output_lines:
-            line = line.strip()
-            if line and (line.startswith("{") or line.startswith("[")):
-                try:
-                    profiles = json.loads(line)
-                    break
-                except json.JSONDecodeError:
-                    continue
-        
-        # Si pas de JSON, essayer de parser manuellement les résultats
-        if not profiles and result.stdout:
-            # Format alternatif: chercher les URLs dans la sortie
-            for line in output_lines:
-                if "http" in line.lower() or "https" in line.lower():
-                    # Essayer d'extraire des infos
-                    pass
-        
-        return {
-            "username": username,
-            "profiles": profiles if isinstance(profiles, dict) else {},
-            "count": len(profiles) if isinstance(profiles, dict) else 0,
-            "raw_output": result.stdout[:500] if result.stdout else "",  # Limiter la taille
-        }
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Sherlock timeout (>120s)")
+        from services.osint_tools import run_sherlock
+
+        data = await asyncio.to_thread(run_sherlock, username)
+        if data.get("unavailable"):
+            raise HTTPException(
+                status_code=503,
+                detail=data.get("error") or "Sherlock non installé. pip install sherlock-project",
+            )
+        if not data.get("success") and data.get("error"):
+            raise HTTPException(status_code=504 if "timeout" in str(data.get("error")).lower() else 500, detail=data["error"])
+        return data
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erreur Sherlock: {str(e)}")
 
@@ -1973,26 +1925,12 @@ def _check_exiftool() -> bool:
 
 
 def _check_sherlock() -> bool:
-    for cmd in [["sherlock"], ["python", "-m", "sherlock"]]:
-        try:
-            result = subprocess.run(cmd + ["--version"], capture_output=True, timeout=2)
-            stdout = (
-                result.stdout.decode("utf-8", errors="ignore")
-                if isinstance(result.stdout, (bytes, bytearray))
-                else (result.stdout or "")
-            )
-            stderr = (
-                result.stderr.decode("utf-8", errors="ignore")
-                if isinstance(result.stderr, (bytes, bytearray))
-                else (result.stderr or "")
-            )
-            stdout_l = (stdout or "").lower()
-            stderr_l = (stderr or "").lower()
-            if result.returncode == 0 or "sherlock" in stdout_l or "sherlock" in stderr_l:
-                return True
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            continue
-    return False
+    try:
+        from services.osint_tools import _resolve_sherlock_cmd
+
+        return _resolve_sherlock_cmd() is not None
+    except Exception:
+        return False
 
 
 def _check_skiptracer() -> bool:

@@ -575,15 +575,41 @@ const PlaybooksUI = (() => {
  <div class="pb-step-status">${step.status}</div>
  ${step.error ? `<div class="pb-step-error">${esc(step.error)}</div>` : ""}
  ${step.status === "success" ? `<div class="pb-step-detail">${stepSummary(step)}</div>` : ""}
+ ${step.status === "success" && step.plugin_id === "sherlock" ? renderSherlockProfiles(step.data || {}) : ""}
  </div>
  </div>`).join("");
+ }
+
+ function renderSherlockProfiles(d) {
+ const profiles = d.profiles || {};
+ const entries = Object.entries(profiles);
+ if (!entries.length) {
+ return `<div class="pb-sherlock-empty" style="margin-top:6px;font-size:0.75rem;color:var(--text-muted)">Aucun profil social trouvé pour ce username.</div>`;
+ }
+ const rows = entries.slice(0, 20).map(([site, info]) => {
+ const url = (info && (info.url_main || info.url_user || info.url)) || "";
+ const label = esc(site);
+ const link = url
+ ? `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);word-break:break-all">${esc(url)}</a>`
+ : `<span style="color:var(--text-muted)">—</span>`;
+ return `<tr><td style="padding:2px 8px 2px 0;white-space:nowrap;font-weight:500">${label}</td><td style="padding:2px 0">${link}</td></tr>`;
+ }).join("");
+ const more = entries.length > 20 ? `<div style="margin-top:4px;font-size:0.7rem;color:var(--text-muted)">+${entries.length - 20} autres…</div>` : "";
+ return `<div class="pb-sherlock-profiles" style="margin-top:8px;max-height:220px;overflow:auto">
+ <table style="width:100%;font-size:0.75rem;border-collapse:collapse">${rows}</table>${more}
+ </div>`;
  }
 
  function stepSummary(step) {
  const d = step.data || {};
  const map = {
  leakcheck: () => `${d.breach_count || 0} fuite(s) · risque ${d.risk_level || "N/A"}`,
- sherlock: () => `${d.count || 0} profil(s) trouvé(s)`,
+ sherlock: () => {
+ const n = d.count || Object.keys(d.profiles || {}).length || 0;
+ const sites = (d.sites_found || Object.keys(d.profiles || {})).slice(0, 5);
+ const extra = sites.length ? ` · ${sites.join(", ")}` : "";
+ return `${n} profil(s) trouvé(s)${extra}`;
+ },
  virustotal: () => `${d.detections || 0}/${d.total || 0} détections antivirus`,
  abuseipdb: () => `Score réputation : ${d.abuseConfidence || 0}%`,
  shodan_ip: () => `${(d.ports || []).length} port(s) · ${d.vuln_count || 0} vulnérabilité(s)`,

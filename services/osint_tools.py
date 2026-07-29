@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -163,57 +164,157 @@ def run_whois(query: str) -> Dict[str, Any]:
     }
 
 
-def run_sherlock(username: str) -> Dict[str, Any]:
-    username = username.strip()
-    if not username:
-        return {"success": False, "error": "Nom d'utilisateur vide"}
+def _resolve_sherlock_cmd() -> Optional[List[str]]:
+    """Trouve la commande Sherlock (CLI moderne = sherlock-project)."""
+    import sys
 
-    sherlock_cmd = None
-    for cmd in [["sherlock"], ["python", "-m", "sherlock"]]:
+    candidates = [
+        ["sherlock"],
+        [sys.executable, "-m", "sherlock_project"],
+        [sys.executable, "-m", "sherlock"],
+        ["python3", "-m", "sherlock_project"],
+        ["python", "-m", "sherlock"],
+    ]
+    for cmd in candidates:
         try:
             result = subprocess.run(
                 cmd + ["--version"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=8,
             )
-            if (
-                result.returncode == 0
-                or "sherlock" in result.stdout.lower()
-                or "sherlock" in result.stderr.lower()
-            ):
-                sherlock_cmd = cmd
-                break
-        except FileNotFoundError:
+            blob = f"{result.stdout or ''}{result.stderr or ''}".lower()
+            if result.returncode == 0 or "sherlock" in blob:
+                return cmd
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
+    return None
 
+
+def _parse_sherlock_profiles(stdout: str, out_dir: Path, username: str) -> Dict[str, Any]:
+    """Parse stdout + fichiers générés par Sherlock 0.16+."""
+    profiles: Dict[str, Any] = {}
+
+    # 1) URLs dans stdout (--print-found)
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if "http://" not in line and "https://" not in line:
+            continue
+        # Formats typiques: "[+] Site: https://..." ou juste une URL
+        for token in line.replace("\t", " ").split():
+            if token.startswith("http://") or token.startswith("https://"):
+                url = token.rstrip("),];")
+                site = url.split("/")[2] if "://" in url else url
+                profiles[site] = {"url": url, "url_main": url, "status": "Claimed"}
+
+    # 2) Fichier texte généré (--folderoutput / -o)
+    for candidate in (
+        out_dir / f"{username}.txt",
+        out_dir / f"{username}.csv",
+        Path.cwd() / f"{username}.txt",
+    ):
+        if not candidate.is_file():
+            continue
+        try:
+            text = candidate.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if candidate.suffix.lower() == ".csv":
+            import csv
+            import io
+
+            try:
+                reader = csv.DictReader(io.StringIO(text))
+                for row in reader:
+                    url = (row.get("url") or row.get("URL") or "").strip()
+                    site = (row.get("name") or row.get("site") or row.get("Site") or "").strip()
+                    if not url and not site:
+                        continue
+                    if not site and url:
+                        site = url.split("/")[2] if "://" in url else url
+                    profiles[site or url] = {
+                        "url": url,
+                        "url_main": url,
+                        "status": (row.get("status") or row.get("Status") or "Claimed"),
+                    }
+            except Exception:
+                pass
+        else:
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("http://") or line.startswith("https://"):
+                    url = line
+                    site = url.split("/")[2]
+                    profiles[site] = {"url": url, "url_main": url, "status": "Claimed"}
+
+    return profiles
+
+
+def run_sherlock(username: str) -> Dict[str, Any]:
+    """Lance Sherlock 0.16+ et retourne les profils trouvés (URLs)."""
+    import tempfile
+
+    username = username.strip().lstrip("@")
+    if not username:
+        return {"success": False, "error": "Nom d'utilisateur vide"}
+
+    sherlock_cmd = _resolve_sherlock_cmd()
     if not sherlock_cmd:
         return {"success": False, "error": "Sherlock non installé", "unavailable": True}
 
-    result = subprocess.run(
-        sherlock_cmd + ["--no-color", "--json", username],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    with tempfile.TemporaryDirectory(prefix="pg-sherlock-") as tmp:
+        out_dir = Path(tmp)
+        # NOTE: --json dans Sherlock 0.16 = charger une liste de sites, PAS exporter du JSON
+        cmd = sherlock_cmd + [
+            "--no-color",
+            "--print-found",
+            "--csv",
+            "--folderoutput",
+            str(out_dir),
+            "--timeout",
+            "15",
+            username,
+        ]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
+                cwd=str(out_dir),
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "success": False,
+                "error": "Sherlock timeout (>180s)",
+                "username": username,
+                "profiles": {},
+                "count": 0,
+            }
 
-    profiles = {}
-    for line in (result.stdout or "").split("\n"):
-        line = line.strip()
-        if line and (line.startswith("{") or line.startswith("[")):
-            try:
-                profiles = json.loads(line)
-                break
-            except json.JSONDecodeError:
-                continue
+        profiles = _parse_sherlock_profiles(result.stdout or "", out_dir, username)
+        # Fallback stderr parfois
+        if not profiles and result.stderr:
+            profiles = _parse_sherlock_profiles(result.stderr, out_dir, username)
 
-    count = len(profiles) if isinstance(profiles, dict) else 0
+    count = len(profiles)
+    # Liste plate pour l'UI
+    urls = [
+        (v.get("url") if isinstance(v, dict) else str(v))
+        for v in profiles.values()
+        if v
+    ]
+    urls = [u for u in urls if u and str(u).startswith("http")]
+
     return {
         "success": True,
         "username": username,
-        "profiles": profiles if isinstance(profiles, dict) else {},
+        "profiles": profiles,
+        "urls": urls,
         "count": count,
+        "sites_found": list(profiles.keys()),
         "risk_level": "high" if count > 5 else "medium" if count > 0 else "low",
+        "raw_preview": (result.stdout or "")[:800],
     }
 
 

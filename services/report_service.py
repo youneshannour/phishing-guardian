@@ -445,7 +445,10 @@ def _step_summary(step: Dict[str, Any]) -> str:
     if pid == "leakcheck":
         return f"{d.get('breach_count', 0)} fuite(s), risque {d.get('risk_level', 'N/A')}"
     if pid == "sherlock":
-        return f"{d.get('count', 0)} profil(s)"
+        sites = d.get("sites_found") or list((d.get("profiles") or {}).keys())
+        preview = ", ".join(sites[:5])
+        extra = f" ({preview})" if preview else ""
+        return f"{d.get('count', 0)} profil(s){extra}"
     if pid == "virustotal":
         return f"{d.get('detections', 0)}/{d.get('total', 0)} détections AV"
     if pid == "abuseipdb":

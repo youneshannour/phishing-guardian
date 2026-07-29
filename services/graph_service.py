@@ -158,7 +158,7 @@ def _infer_from_step(
         username = data.get("username")
         uid = _ensure_node(nodes, "username", username, source=plugin) if username else root_id
         for site, info in (data.get("profiles") or {}).items():
-            url = info.get("url_main") or info.get("url_user")
+            url = info.get("url_main") or info.get("url_user") or info.get("url")
             if url:
                 url_id = _ensure_node(
                     nodes, "url", url, source=plugin, metadata={"platform": site}
