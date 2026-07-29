@@ -20,7 +20,7 @@
  <link rel="stylesheet" href="/static/animations.css?v=8.5" />
  <link rel="stylesheet" href="/static/pg-fx.css?v=8.5" />
  <link rel="stylesheet" href="/static/pg-theme.css?v=8.5" />
- <link rel="stylesheet" href="/static/pg-pro.css?v=8.5" />
+ <link rel="stylesheet" href="/static/pg-pro.css?v=8.9" />
  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.30.2/cytoscape.min.js" crossorigin="anonymous"></script>
  </head>
  <body>
@@ -554,9 +554,15 @@
  <div style="text-align:center;color:var(--text-muted);font-size:0.75rem">ou</div>
  <div class="form-group" style="margin:0">
  <label class="label">Capture d'écran d'email</label>
+ <div id="emailPasteZone" class="email-paste-zone" tabindex="0" role="button" aria-label="Coller une capture d'écran">
  <input type="file" id="emailImage" accept="image/*" class="input-hacking" />
+ <p class="email-paste-hint">
+ <strong>Ctrl+V</strong> pour coller une capture · ou glisser-déposer · ou parcourir
+ </p>
  <div id="imagePreview" class="hidden mt-2">
  <img id="previewImg" src="" alt="Preview" style="max-width:100%;border-radius:8px;border:1px solid var(--border-subtle)" />
+ <p id="pasteImageMeta" style="margin-top:6px;font-size:0.7rem;color:var(--text-muted)"></p>
+ </div>
  </div>
  </div>
  </div>
@@ -569,8 +575,8 @@
  Analyser <span id="spinner" class="hidden animate-spin spinner-dot"></span>
  </button>
  <p style="margin-top:0.75rem;font-size:0.7rem;color:var(--text-muted);line-height:1.4">
- Analyse enrichie : heuristiques + blocklists (OpenPhish / URLHaus) + VirusTotal + WHOIS + SPF/DMARC.
- Les URLs collées dans l’email sont extraites automatiquement.
+ Analyse poussée : OCR + heuristiques + OpenPhish/URLHaus + VirusTotal + WHOIS + SPF/DMARC.
+ Collez une capture avec <strong>Ctrl+V</strong>, glissez-déposez, ou collez le texte de l’email.
  </p>
  </div>
  </div>
@@ -770,7 +776,7 @@
  <script src="/static/theme.js?v=8.5"></script>
  <script src="/static/matrix.js?v=8.5"></script>
  <script src="/static/effects.js?v=8.5"></script>
- <script src="/static/app.js?v=8.8"></script>
+ <script src="/static/app.js?v=8.9"></script>
  <script src="/static/playbooks.js?v=8.7"></script>
  <script src="/static/investigator-ai.js?v=8.5"></script>
  <script src="/static/graph.js?v=8.5"></script>

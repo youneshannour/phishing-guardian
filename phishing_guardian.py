@@ -198,7 +198,12 @@ BRAND_OFFICIAL_DOMAINS = {
     "facebook": ("facebook.com", "fb.com", "meta.com"),
     "netflix": ("netflix.com", "mailer.netflix.com"),
     "orange": ("orange.fr", "orange.com", "wanadoo.fr"),
-    "getaround": ("getaround.com", "mail.community.getaround.com", "community.getaround.com"),
+    "getaround": (
+        "getaround.com",
+        "mail-community.getaround.com",
+        "mail.community.getaround.com",
+        "community.getaround.com",
+    ),
     "société générale": ("societegenerale.fr", "socgen.com", "sg.fr"),
     "societe generale": ("societegenerale.fr", "socgen.com", "sg.fr"),
     "banque populaire": ("banquepopulaire.fr",),

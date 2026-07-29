@@ -192,174 +192,184 @@ function initPhishing() {
  const emailImageInput = document.getElementById("emailImage");
  const imagePreview = document.getElementById("imagePreview");
  const previewImg = document.getElementById("previewImg");
- 
+ const pasteZone = document.getElementById("emailPasteZone");
+ const pasteMeta = document.getElementById("pasteImageMeta");
  if (!analyzeBtn) return;
 
- // Gestion de l'upload d'image
- if (emailImageInput) {
- emailImageInput.addEventListener("change", (e) => {
- const file = e.target.files[0];
- if (file) {
+ /** @type {File|null} */
+ let pendingImage = null;
+
+ function setPendingImage(file) {
+ if (!file || !file.type.startsWith("image/")) {
+ updateTerminal("[OCR] Fichier ignoré — image requise");
+ return;
+ }
+ pendingImage = file;
+ const kb = Math.max(1, Math.round(file.size / 1024));
  const reader = new FileReader();
  reader.onload = (event) => {
- previewImg.src = event.target.result;
- imagePreview.classList.remove("hidden");
+ if (previewImg) previewImg.src = event.target.result;
+ imagePreview?.classList.remove("hidden");
+ if (pasteMeta) {
+ pasteMeta.textContent = `${file.name || "capture.png"} · ${kb} Ko — prêt pour analyse OCR approfondie`;
+ }
+ pasteZone?.classList.add("has-image");
  };
  reader.readAsDataURL(file);
- } else {
- imagePreview.classList.add("hidden");
+ updateTerminal(`[OCR] Capture prête: ${file.name || "clipboard.png"} (${kb} Ko)`);
+
+ // Sync aussi vers l'input file via DataTransfer (best effort)
+ try {
+ const dt = new DataTransfer();
+ dt.items.add(file);
+ if (emailImageInput) emailImageInput.files = dt.files;
+ } catch (_) { /* ignore */ }
  }
+
+ function clearPendingImage() {
+ pendingImage = null;
+ imagePreview?.classList.add("hidden");
+ pasteZone?.classList.remove("has-image");
+ if (pasteMeta) pasteMeta.textContent = "";
+ if (emailImageInput) emailImageInput.value = "";
+ }
+
+ if (emailImageInput) {
+ emailImageInput.addEventListener("change", (e) => {
+ const file = e.target.files?.[0];
+ if (file) setPendingImage(file);
+ else clearPendingImage();
+ });
+ }
+
+ // Coller capture (Ctrl+V) — zone dédiée + panneau phishing
+ async function handlePasteImage(e) {
+ const items = e.clipboardData?.items;
+ if (!items) return;
+ for (const item of items) {
+ if (item.type && item.type.startsWith("image/")) {
+ e.preventDefault();
+ const blob = item.getAsFile();
+ if (!blob) return;
+ const file = new File([blob], `paste-${Date.now()}.png`, { type: blob.type || "image/png" });
+ setPendingImage(file);
+ updateTerminal("[OCR] Capture collée depuis le presse-papiers (Ctrl+V)");
+ return;
+ }
+ }
+ }
+
+ document.addEventListener("paste", (e) => {
+ const panel = document.getElementById("panel-phishing");
+ if (!panel || panel.classList.contains("hidden")) return;
+ // Ne pas intercepter si l'utilisateur colle du texte dans le textarea
+ const tag = (e.target && e.target.tagName) || "";
+ if (tag === "TEXTAREA" || tag === "INPUT") {
+ // Si le presse-papiers contient une image ET du texte, prioriser image seulement hors textarea
+ const hasImage = [...(e.clipboardData?.items || [])].some((i) => i.type?.startsWith("image/"));
+ if (!hasImage) return;
+ }
+ handlePasteImage(e);
+ });
+
+ if (pasteZone) {
+ pasteZone.addEventListener("paste", handlePasteImage);
+ pasteZone.addEventListener("dragover", (e) => {
+ e.preventDefault();
+ pasteZone.classList.add("drag-over");
+ });
+ pasteZone.addEventListener("dragleave", () => pasteZone.classList.remove("drag-over"));
+ pasteZone.addEventListener("drop", (e) => {
+ e.preventDefault();
+ pasteZone.classList.remove("drag-over");
+ const file = e.dataTransfer?.files?.[0];
+ if (file) setPendingImage(file);
  });
  }
 
  analyzeBtn.addEventListener("click", async () => {
  const email = document.getElementById("email").value.trim();
  const urlsRaw = document.getElementById("urls").value.trim();
- const urls = urlsRaw.length > 0 ? urlsRaw.split(",").map((u) => u.trim()).filter((u) => u.length > 0) : [];
- const imageFile = emailImageInput?.files[0];
+ const urls = urlsRaw.length > 0
+ ? urlsRaw.split(",").map((u) => u.trim()).filter((u) => u.length > 0)
+ : [];
+ const imageFile = pendingImage || emailImageInput?.files?.[0] || null;
 
- // Si une image est fournie, utiliser l'OCR
- if (imageFile) {
  analyzeBtn.disabled = true;
- document.getElementById("spinner").classList.remove("hidden");
- updateTerminal("[PHISHING] Analyzing image with OCR...");
+ document.getElementById("spinner")?.classList.remove("hidden");
 
  try {
+ if (imageFile) {
+ updateTerminal("[PHISHING] OCR + threat intel sur la capture…");
  const formData = new FormData();
  formData.append("file", imageFile);
-
- const response = await fetch("/api/analyze-image", {
+ const response = await fetch("/api/analyze-screenshot", {
  method: "POST",
  body: formData,
  });
-
  if (!response.ok) {
  let detail = `HTTP ${response.status}`;
- try {
- const errBody = await response.json();
- detail = errBody.detail || detail;
- } catch (_) { /* ignore */ }
+ try { detail = (await response.json()).detail || detail; } catch (_) {}
  throw new Error(detail);
  }
-
  const data = await response.json();
- 
- // Afficher le résultat de l'OCR avec statistiques
- if (data.success && data.extracted_text) {
- const stats = data.statistics || {};
- const statsMsg = stats.words ? ` (${stats.words} mots, ${stats.lines} lignes)` : '';
- updateTerminal(`[OCR] Texte extrait: ${data.extracted_text.substring(0, 150)}${data.extracted_text.length > 150 ? '...' : ''}${statsMsg}`);
- 
- if (stats.has_email) {
- updateTerminal(`[OCR] Email détecté dans le texte`);
+ if (!data.success) {
+ throw new Error(data.message || "Analyse capture échouée");
  }
- if (stats.has_url) {
- updateTerminal(`[OCR] URL détectée dans le texte`);
+ const ocr = data.ocr || {};
+ const text = ocr.extracted_text || "";
+ if (text) document.getElementById("email").value = text;
+ const arts = ocr.artifacts || {};
+ if ((arts.urls || []).length && !urlsRaw) {
+ document.getElementById("urls").value = (arts.urls || []).slice(0, 5).join(", ");
  }
- 
- // Remplir automatiquement le champ email avec le texte extrait
- document.getElementById("email").value = data.extracted_text;
- 
- // Analyser le texte extrait
- updateTerminal(`[PHISHING] Analyse du texte extrait...`);
- const analyzeResponse = await fetch("/api/analyze", {
- method: "POST",
- headers: { "Content-Type": "application/json" },
- body: JSON.stringify({ 
- email: data.extracted_text, 
- urls 
- }),
- });
-
- if (!analyzeResponse.ok) {
- const errorText = await analyzeResponse.text();
- throw new Error(`HTTP ${analyzeResponse.status}: ${errorText}`);
- }
-
- const analyzeData = await analyzeResponse.json();
- renderPhishingResult(analyzeData);
- updateTerminal(`[PHISHING] Analyse complète. ${data.message || 'Texte analysé avec succès.'}`);
- } else {
- // Afficher un message d'erreur ou d'avertissement avec détails
- const errorMsg = data.message || data.warning || "Aucun texte extrait de l'image";
- updateTerminal(`[OCR] ${errorMsg}`);
- 
- if (data.ocr_errors && data.ocr_errors.length > 0) {
- updateTerminal(`[OCR] Erreurs: ${data.ocr_errors.join(', ')}`);
- }
- 
- // Afficher le message dans l'interface avec plus de détails
- const resultDiv = document.getElementById("phishingResult");
- if (resultDiv) {
- const imageInfo = data.image_info || {};
- resultDiv.innerHTML = `
- <div class="bg-yellow-500/10 border border-yellow-500/50 rounded-lg p-4">
- <h3 class="text-yellow-400 font-bold mb-2">OCR — Avertissement</h3>
- <p class="text-gray-300 mb-2">${errorMsg}</p>
- ${imageInfo.original_size ? `<p class="text-gray-400 text-sm mb-1">Taille image: ${imageInfo.original_size} → ${imageInfo.processed_size || 'N/A'}</p>` : ''}
- ${data.extracted_text ? `
- <div class="mt-3 p-2 bg-gray-800/50 rounded">
- <p class="text-gray-400 text-xs mb-1">Texte partiel extrait:</p>
- <p class="text-gray-300 text-sm font-mono">${data.extracted_text.substring(0, 300)}${data.extracted_text.length > 300 ? '...' : ''}</p>
- </div>
- ` : ''}
- ${data.ocr_errors && data.ocr_errors.length > 0 ? `
- <div class="mt-2 p-2 bg-red-900/20 rounded">
- <p class="text-red-400 text-xs">Erreurs OCR:</p>
- <ul class="text-red-300 text-xs list-disc list-inside">
- ${data.ocr_errors.map(e => `<li>${e}</li>`).join('')}
- </ul>
- </div>
- ` : ''}
- </div>
- `;
- }
- }
- } catch (err) {
- updateTerminal(`[ERROR] ${err.message}`);
- } finally {
- analyzeBtn.disabled = false;
- document.getElementById("spinner").classList.add("hidden");
- }
+ updateTerminal(
+ `[OCR] ${ocr.message || "OK"} · emails=${(arts.emails || []).length} urls=${(arts.urls || []).length}`
+ );
+ renderPhishingResult(data);
+ updateTerminal(
+ `[PHISHING] Analyse complète — score ${data.synthetique?.score ?? "?"} (${data.synthetique?.niveau || "?"})`
+ );
  return;
  }
 
- // Analyse normale (texte)
  if (!email && urls.length === 0) {
- updateTerminal("[ERROR] No input provided");
+ updateTerminal("[ERROR] Collez un email, des URLs, ou une capture (Ctrl+V)");
  return;
  }
 
- analyzeBtn.disabled = true;
- document.getElementById("spinner").classList.remove("hidden");
- updateTerminal("[PHISHING] Executing analysis...");
-
- try {
+ updateTerminal("[PHISHING] Analyse multi-sources…");
  const response = await fetch("/api/analyze", {
  method: "POST",
  headers: { "Content-Type": "application/json" },
  body: JSON.stringify({ email, urls }),
  });
-
  if (!response.ok) {
  let detail = `HTTP ${response.status}`;
- try {
- const errBody = await response.json();
- detail = errBody.detail || detail;
- } catch (_) { /* ignore */ }
+ try { detail = (await response.json()).detail || detail; } catch (_) {}
  throw new Error(detail);
  }
-
  const data = await response.json();
  renderPhishingResult(data);
  updateTerminal("[PHISHING] Analysis complete. Results displayed.");
  } catch (err) {
  updateTerminal(`[ERROR] ${err.message}`);
+ const detailsEl = document.getElementById("details");
+ if (detailsEl) {
+ detailsEl.innerHTML = `<div class="text-red-400 font-share-tech">&gt; ERROR: ${escHtml(err.message)}</div>`;
+ }
  } finally {
  analyzeBtn.disabled = false;
- document.getElementById("spinner").classList.add("hidden");
+ document.getElementById("spinner")?.classList.add("hidden");
  }
  });
+}
+
+function escHtml(str) {
+ if (str == null) return "";
+ const d = document.createElement("div");
+ d.textContent = String(str);
+ return d.innerHTML;
 }
 
 function renderPhishingResult(data) {
@@ -384,7 +394,8 @@ function renderPhishingResult(data) {
  riskSummaryEl.innerHTML = `
  <div class="text-green-400 font-share-tech space-y-2">
  <div>&gt; RISK_SCORE: <span class="text-green-300 font-bold text-lg">${Number(synth.score || 0).toFixed(3)}</span></div>
- <div>&gt; LEVEL: <span class="${style.class.replace('risk-', 'text-')} font-bold">${synth.niveau.toUpperCase()}</span></div>
+ <div>&gt; LEVEL: <span class="${style.class.replace('risk-', 'text-')} font-bold">${String(synth.niveau || "faible").toUpperCase()}</span></div>
+ ${synth.score_heuristique != null ? `<div>&gt; HEURISTIC: ${Number(synth.score_heuristique).toFixed(3)} · INTEL_BOOST +${Number(synth.boost_intel || 0).toFixed(3)}</div>` : ""}
  ${Object.keys(stats).length > 0 ? `
  <div class="mt-3 pt-2 border-t border-green-500/30">
  <div class="text-green-500 font-bold mb-1">&gt; STATISTICS</div>
@@ -394,16 +405,34 @@ function renderPhishingResult(data) {
  ${stats.legitimate_urls !== undefined ? `<div>LEGITIMATE_URLS: <span class="text-green-300">${stats.legitimate_urls}</span></div>` : ""}
  ${stats.email_analyzed !== undefined ? `<div>EMAIL_ANALYZED: ${stats.email_analyzed ? "YES" : "NO"}</div>` : ""}
  ${stats.email_is_phishing !== undefined ? `<div>EMAIL_PHISHING: <span class="${stats.email_is_phishing ? 'text-red-400' : 'text-green-300'}">${stats.email_is_phishing ? "YES" : "NO"}</span></div>` : ""}
+ ${stats.ocr_emails !== undefined ? `<div>OCR_EMAILS: ${stats.ocr_emails} · OCR_URLS: ${stats.ocr_urls || 0}</div>` : ""}
  ${stats.intel_boost !== undefined ? `<div>INTEL_BOOST: <span class="text-amber-300">+${Number(stats.intel_boost || 0).toFixed(3)}</span></div>` : ""}
  ${(stats.sources_ok || []).length ? `<div>INTEL_SOURCES: <span class="text-green-300">${stats.sources_ok.join(", ")}</span></div>` : ""}
  </div>
  </div>
  ` : ""}
- <div class="text-green-600 text-xs mt-2">&gt; Heuristics + threat intel fusion (blocklists / VT / WHOIS / SPF-DMARC)</div>
+ <div class="text-green-600 text-xs mt-2">&gt; Heuristics + OCR + threat intel (blocklists / VT / WHOIS / SPF-DMARC)</div>
  </div>
  `;
 
  detailsEl.innerHTML = "";
+
+ if (data.ocr) {
+ const ocr = data.ocr;
+ const arts = ocr.artifacts || {};
+ const ocrDiv = document.createElement("div");
+ ocrDiv.className = "result-hacking mb-3";
+ ocrDiv.innerHTML = `
+ <div class="text-green-500 font-bold mb-2">&gt; OCR_CAPTURE</div>
+ <div class="text-green-400 text-xs font-share-tech space-y-1">
+ <div>${escHtml(ocr.message || "OCR")}</div>
+ ${(arts.emails || []).length ? `<div>EMAILS: <span class="text-green-300 font-mono">${arts.emails.map(escHtml).join(", ")}</span></div>` : ""}
+ ${(arts.urls || []).length ? `<div>URLS: <span class="text-green-300 font-mono break-all">${arts.urls.map(escHtml).join(" · ")}</span></div>` : ""}
+ ${(arts.inferred || []).length ? `<div class="text-yellow-400">INFÉRÉ: ${arts.inferred.map((i) => escHtml(JSON.stringify(i))).join(" · ")}</div>` : ""}
+ ${ocr.extracted_text ? `<div class="mt-2 pt-2 border-t border-green-500/30 text-green-600 max-h-28 overflow-auto whitespace-pre-wrap font-mono">${escHtml(ocr.extracted_text.slice(0, 1200))}</div>` : ""}
+ </div>`;
+ detailsEl.appendChild(ocrDiv);
+ }
 
  const enr = data.enrichment;
  if (enr) {
@@ -419,42 +448,42 @@ function renderPhishingResult(data) {
  <div class="text-green-400 text-xs font-share-tech space-y-1">
  <div>SOURCES_OK: <span class="text-green-300">${(enr.sources_ok || []).join(", ") || "—"}</span></div>
  ${(enr.sources_failed || []).length ? `<div>SOURCES_FAILED: <span class="text-yellow-400">${enr.sources_failed.join(", ")}</span></div>` : ""}
- ${(enr.auto_extracted_urls || []).length ? `<div class="mt-1">AUTO_URLS:<ul class="list-disc list-inside ml-4">${enr.auto_extracted_urls.map((u) => `<li class="text-green-300 break-all font-mono">${u}</li>`).join("")}</ul></div>` : ""}
+ ${(enr.auto_extracted_urls || []).length ? `<div class="mt-1">AUTO_URLS:<ul class="list-disc list-inside ml-4">${enr.auto_extracted_urls.map((u) => `<li class="text-green-300 break-all font-mono">${escHtml(u)}</li>`).join("")}</ul></div>` : ""}
  ${bl ? `
  <div class="mt-2 pt-2 border-t border-green-500/30">
  <div class="text-green-500 font-bold mb-1">&gt; BLOCKLIST</div>
  <div>LISTED: <span class="${bl.listed ? "text-red-400 font-bold" : "text-green-300"}">${bl.listed ? "YES" : "NO"}</span>
  ${(bl.sources_hit || []).length ? ` · ${(bl.sources_hit || []).join(", ")}` : ""}</div>
- ${(bl.findings || []).slice(0, 3).map((f) => `<div class="text-green-300">• ${f}</div>`).join("")}
+ ${(bl.findings || []).slice(0, 3).map((f) => `<div class="text-green-300">• ${escHtml(f)}</div>`).join("")}
  </div>` : ""}
  ${vt ? `
  <div class="mt-2 pt-2 border-t border-green-500/30">
  <div class="text-green-500 font-bold mb-1">&gt; VIRUSTOTAL</div>
  <div>DETECTIONS: <span class="${(vt.detections || 0) > 0 ? "text-red-400 font-bold" : "text-green-300"}">${vt.detections || 0}/${vt.total || 0}</span>
  ${vt.risk_level ? ` · RISK ${String(vt.risk_level).toUpperCase()}` : ""}</div>
- ${vt.query ? `<div>QUERY: <span class="font-mono text-green-300 break-all">${vt.query}</span></div>` : ""}
- ${vt.message ? `<div class="text-yellow-400">${vt.message}</div>` : ""}
+ ${vt.query ? `<div>QUERY: <span class="font-mono text-green-300 break-all">${escHtml(vt.query)}</span></div>` : ""}
+ ${vt.message ? `<div class="text-yellow-400">${escHtml(vt.message)}</div>` : ""}
  </div>` : ""}
  ${auth ? `
  <div class="mt-2 pt-2 border-t border-green-500/30">
  <div class="text-green-500 font-bold mb-1">&gt; EMAIL_AUTH</div>
- <div>DOMAIN: <span class="font-mono text-green-300">${auth.domain || "—"}</span> · SCORE ${auth.auth_score ?? "?"}
+ <div>DOMAIN: <span class="font-mono text-green-300">${escHtml(auth.domain || "—")}</span> · SCORE ${auth.auth_score ?? "?"}
  · SPF ${auth.spf ? "OK" : "NO"} · DMARC ${auth.dmarc ? "OK" : "NO"}
  · DKIM ${(auth.dkim_selectors || []).length ? (auth.dkim_selectors || []).join(",") : "NO"}</div>
- ${(auth.findings || []).slice(0, 4).map((f) => `<div class="text-green-300">• ${f}</div>`).join("")}
+ ${(auth.findings || []).slice(0, 4).map((f) => `<div class="text-green-300">• ${escHtml(f)}</div>`).join("")}
  </div>` : ""}
  ${whois ? `
  <div class="mt-2 pt-2 border-t border-green-500/30">
  <div class="text-green-500 font-bold mb-1">&gt; WHOIS_AGE</div>
- <div>DOMAIN: <span class="font-mono text-green-300">${whois.domain || "—"}</span></div>
+ <div>DOMAIN: <span class="font-mono text-green-300">${escHtml(whois.domain || "—")}</span></div>
  <div>AGE: <span class="${whois.age_days != null && whois.age_days < 30 ? "text-red-400 font-bold" : "text-green-300"}">${whois.age_days != null ? whois.age_days + " jours" : "N/A"}</span>
- ${whois.registrar ? ` · ${whois.registrar}` : ""}</div>
- ${whois.creation_date ? `<div>CREATED: ${whois.creation_date}</div>` : ""}
+ ${whois.registrar ? ` · ${escHtml(whois.registrar)}` : ""}</div>
+ ${whois.creation_date ? `<div>CREATED: ${escHtml(String(whois.creation_date))}</div>` : ""}
  </div>` : ""}
  ${boosts.length ? `
  <div class="mt-2 pt-2 border-t border-green-500/30">
  <div class="text-green-500 font-bold mb-1">&gt; SCORE_BOOSTS</div>
- ${boosts.map((b) => `<div class="text-amber-300">+${Number(b.delta).toFixed(3)} — ${b.reason}</div>`).join("")}
+ ${boosts.map((b) => `<div class="text-amber-300">+${Number(b.delta).toFixed(3)} — ${escHtml(b.reason)}</div>`).join("")}
  </div>` : ""}
  </div>
  `;
@@ -477,8 +506,8 @@ function renderPhishingResult(data) {
  <div class="text-green-500 font-bold mb-1">&gt; DOMAIN_CHECK</div>
  ${domains.map((d) => `
  <div class="ml-2 mb-2 space-y-0.5">
- <div>FROM: <span class="text-green-300 font-mono">${d.email || "?"}</span></div>
- <div>DOMAIN: <span class="text-green-300 font-mono">${d.domain || d.registrable || "?"}</span>
+ <div>FROM: <span class="text-green-300 font-mono">${escHtml(d.email || "?")}</span></div>
+ <div>DOMAIN: <span class="text-green-300 font-mono">${escHtml(d.domain || d.registrable || "?")}</span>
  ${d.dns_ok === true ? '<span class="text-green-300"> · DNS OK</span>' : ""}
  ${d.dns_ok === false ? '<span class="text-red-400"> · DNS FAIL</span>' : ""}
  ${d.free_mail ? '<span class="text-yellow-400"> · FREE-MAIL</span>' : ""}
@@ -488,12 +517,12 @@ function renderPhishingResult(data) {
  </div>
  </div>
  `).join("")}
- ${(da.claimed_brands || []).length ? `<div>BRANDS: <span class="text-green-300">${da.claimed_brands.join(", ")}</span></div>` : ""}
- ${(da.link_domains || []).length ? `<div>LINK_DOMAINS: <span class="text-green-300 font-mono">${da.link_domains.join(", ")}</span></div>` : ""}
+ ${(da.claimed_brands || []).length ? `<div>BRANDS: <span class="text-green-300">${da.claimed_brands.map(escHtml).join(", ")}</span></div>` : ""}
+ ${(da.link_domains || []).length ? `<div>LINK_DOMAINS: <span class="text-green-300 font-mono">${da.link_domains.map(escHtml).join(", ")}</span></div>` : ""}
  </div>
  ` : `<div class="mt-2 text-yellow-400">DOMAIN_CHECK: aucun From détecté dans le texte</div>`}
- ${(e.indicators || []).length > 0 ? `<div class="mt-2">INDICATORS:<ul class="list-disc list-inside ml-4 space-y-1">${e.indicators.map(i => `<li class="text-green-300">${i}</li>`).join("")}</ul></div>` : ""}
- <div class="mt-1 text-green-600">MODEL: ${e.model_used}</div>
+ ${(e.indicators || []).length > 0 ? `<div class="mt-2">INDICATORS:<ul class="list-disc list-inside ml-4 space-y-1">${e.indicators.map((i) => `<li class="text-green-300">${escHtml(i)}</li>`).join("")}</ul></div>` : ""}
+ <div class="mt-1 text-green-600">MODEL: ${escHtml(e.model_used)}</div>
  </div>
  `;
  detailsEl.appendChild(div);
@@ -504,12 +533,12 @@ function renderPhishingResult(data) {
  const div = document.createElement("div");
  div.className = "result-hacking mb-3";
  div.innerHTML = `
- <div class="text-green-500 font-bold mb-2">&gt; URL: <span class="text-green-300 break-all font-mono text-xs">${u.url}</span></div>
+ <div class="text-green-500 font-bold mb-2">&gt; URL: <span class="text-green-300 break-all font-mono text-xs">${escHtml(u.url)}</span></div>
  <div class="text-green-400 text-xs font-share-tech space-y-1">
- <div>LABEL: <span class="${u.label === 'phishing' ? 'text-red-400' : u.label === 'suspect' ? 'text-yellow-400' : 'text-green-300'} font-bold">${u.label.toUpperCase()}</span></div>
- <div>SCORE: <span class="font-mono font-bold">${u.score.toFixed(3)}</span></div>
- ${(u.indicators || []).length > 0 ? `<div class="mt-2">INDICATORS:<ul class="list-disc list-inside ml-4 space-y-1">${u.indicators.map(i => `<li class="text-green-300">${i}</li>`).join("")}</ul></div>` : ""}
- <div class="mt-1 text-green-600">MODEL: ${u.model_used}</div>
+ <div>LABEL: <span class="${u.label === 'phishing' ? 'text-red-400' : u.label === 'suspect' ? 'text-yellow-400' : 'text-green-300'} font-bold">${String(u.label || "").toUpperCase()}</span></div>
+ <div>SCORE: <span class="font-mono font-bold">${Number(u.score || 0).toFixed(3)}</span></div>
+ ${(u.indicators || []).length > 0 ? `<div class="mt-2">INDICATORS:<ul class="list-disc list-inside ml-4 space-y-1">${u.indicators.map((i) => `<li class="text-green-300">${escHtml(i)}</li>`).join("")}</ul></div>` : ""}
+ <div class="mt-1 text-green-600">MODEL: ${escHtml(u.model_used)}</div>
  </div>
  `;
  detailsEl.appendChild(div);

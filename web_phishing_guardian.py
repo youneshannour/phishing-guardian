@@ -338,203 +338,103 @@ async def index(request: Request):
 
 @app.post("/api/analyze-image")
 async def api_analyze_image(file: UploadFile = File(...)) -> Any:
-    """Analyse d'image avec OCR pour extraire le texte d'un email."""
+    """OCR avancé sur capture d'écran d'email (+ artefacts emails/URLs)."""
     if not OCR_AVAILABLE:
         raise HTTPException(
             status_code=503,
-            detail="OCR non disponible. Installez les dépendances: pip install pytesseract Pillow"
+            detail="OCR non disponible. Installez: pip install pytesseract Pillow + tesseract-ocr-fra",
         )
-    
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image vide")
+
+    def _run() -> dict:
+        from services.ocr_email import ocr_email_image
+
+        result = ocr_email_image(image_bytes)
+        result["filename"] = file.filename
+        if not result.get("success"):
+            result["warning"] = (
+                "L'OCR n'a pas pu extraire de texte. Vérifiez la qualité / le zoom de la capture."
+            )
+        return result
+
     try:
-        # Lire l'image
-        image_bytes = await file.read()
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # Vérifier si Tesseract est installé
-        try:
-            pytesseract.get_tesseract_version()
-        except Exception:
-            # Essayer de configurer le chemin Tesseract automatiquement
-            tesseract_paths = [
-                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-                r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-                r"C:\Tesseract-OCR\tesseract.exe",
-                "tesseract",
-                "tesseract.exe"
-            ]
-            
-            tesseract_found = False
-            for path in tesseract_paths:
-                try:
-                    if os.path.exists(path) or path in ["tesseract", "tesseract.exe"]:
-                        pytesseract.pytesseract.tesseract_cmd = path
-                        pytesseract.get_tesseract_version()
-                        tesseract_found = True
-                        break
-                except:
-                    continue
-            
-            if not tesseract_found:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Tesseract OCR non trouvé. Téléchargez-le depuis https://github.com/UB-Mannheim/tesseract/wiki et installez-le. Puis configurez le chemin dans pytesseract.pytesseract.tesseract_cmd"
-                )
-        
-        # Améliorer la qualité de l'image pour un meilleur OCR
-        # 1. Convertir en RGB si nécessaire
-        if image.mode != 'RGB':
-            image = image.convert('RGB')
-        
-        # 2. Redimensionner si l'image est trop petite (minimum 300px de largeur)
-        width, height = image.size
-        if width < 300:
-            scale_factor = 300 / width
-            new_width = int(width * scale_factor)
-            new_height = int(height * scale_factor)
-            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        
-        # 3. Convertir en niveaux de gris pour améliorer la précision
-        gray_image = image.convert('L')
-        
-        # 4. Améliorer le contraste
-        enhancer = ImageEnhance.Contrast(gray_image)
-        gray_image = enhancer.enhance(2.0)  # Augmenter le contraste de 2x
-        
-        # 5. Améliorer la netteté
-        enhancer_sharp = ImageEnhance.Sharpness(gray_image)
-        gray_image = enhancer_sharp.enhance(2.0)  # Augmenter la netteté de 2x
-        
-        # 6. Améliorer la luminosité si nécessaire
-        enhancer_bright = ImageEnhance.Brightness(gray_image)
-        gray_image = enhancer_bright.enhance(1.1)  # Légèrement plus lumineux
-        
-        # 7. Appliquer un filtre pour réduire le bruit
-        gray_image = gray_image.filter(ImageFilter.MedianFilter(size=3))
-        
-        # Configuration OCR optimisée pour les captures d'écran
-        # PSM 6 = Bloc uniforme de texte
-        # PSM 11 = Texte clairsemé (meilleur pour les emails)
-        # PSM 12 = Image avec texte aligné OSD
-        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz@.,!?;:()[]{}/\-_=+*&%$#<>|"\' '
-        
-        # Extraire le texte avec OCR (essayer plusieurs langues et configurations)
-        extracted_text = ""
-        ocr_errors = []
-        
-        # Essai 1: Français + Anglais avec configuration optimisée
-        try:
-            extracted_text = pytesseract.image_to_string(gray_image, lang='fra+eng', config=custom_config)
-            if extracted_text.strip():
-                pass  # Succès
-        except Exception as e:
-            ocr_errors.append(f"fra+eng: {str(e)}")
-        
-        # Essai 2: Seulement anglais si échec
-        if not extracted_text.strip():
-            try:
-                extracted_text = pytesseract.image_to_string(gray_image, lang='eng', config=custom_config)
-            except Exception as e:
-                ocr_errors.append(f"eng: {str(e)}")
-        
-        # Essai 3: Sans langue spécifiée (fallback)
-        if not extracted_text.strip():
-            try:
-                extracted_text = pytesseract.image_to_string(gray_image, config=custom_config)
-            except Exception as e:
-                ocr_errors.append(f"default: {str(e)}")
-        
-        # Essai 4: Mode PSM 11 (texte clairsemé) si toujours rien
-        if not extracted_text.strip():
-            try:
-                custom_config_psm11 = r'--oem 3 --psm 11'
-                extracted_text = pytesseract.image_to_string(gray_image, lang='fra+eng', config=custom_config_psm11)
-            except Exception as e:
-                ocr_errors.append(f"PSM11: {str(e)}")
-        
-        # Nettoyer et corriger le texte extrait
-        cleaned_text = extracted_text.strip()
-        
-        # Post-traitement : corriger les erreurs OCR communes
-        if cleaned_text:
-            # Remplacer les caractères mal reconnus
-            corrections = {
-                '|': 'I',  # Pipe mal reconnu comme I
-                '0': 'O',  # 0 mal reconnu comme O (dans certains contextes)
-                '1': 'I',  # 1 mal reconnu comme I (dans certains contextes)
-                '5': 'S',  # 5 mal reconnu comme S (dans certains contextes)
-            }
-            
-            # Nettoyer les espaces multiples
-            cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
-            
-            # Nettoyer les sauts de ligne multiples
-            cleaned_text = re.sub(r'\n{3,}', '\n\n', cleaned_text)
-            
-            # Supprimer les caractères de contrôle invisibles
-            cleaned_text = ''.join(char for char in cleaned_text if ord(char) >= 32 or char in '\n\t')
-            
-            # Corriger les emails mal reconnus (ex: @ mal reconnu)
-            cleaned_text = re.sub(r'\s*@\s*', '@', cleaned_text)
-            cleaned_text = re.sub(r'(\w+)\s+@\s+(\w+)', r'\1@\2', cleaned_text)
-            
-            # Corriger les URLs mal reconnues
-            cleaned_text = re.sub(r'https?\s*:\s*/\s*/', lambda m: m.group(0).replace(' ', ''), cleaned_text)
-            
-            # Nettoyer les espaces autour de la ponctuation
-            cleaned_text = re.sub(r'\s+([.,!?;:])', r'\1', cleaned_text)
-            cleaned_text = re.sub(r'([.,!?;:])\s+', r'\1 ', cleaned_text)
-        
-        # Statistiques sur le texte extrait
-        word_count = len(cleaned_text.split()) if cleaned_text else 0
-        line_count = len(cleaned_text.split('\n')) if cleaned_text else 0
-        has_email = bool(re.search(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', cleaned_text)) if cleaned_text else False
-        has_url = bool(re.search(r'https?://[^\s]+', cleaned_text)) if cleaned_text else False
-        
-        if not cleaned_text:
+        return await asyncio.to_thread(_run)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur OCR: {exc}")
+
+
+@app.post("/api/analyze-screenshot")
+async def api_analyze_screenshot(file: UploadFile = File(...)) -> Any:
+    """OCR + analyse phishing complète + enrichissement multi-sources en un appel."""
+    if not OCR_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="OCR non disponible. Installez: pip install pytesseract Pillow + tesseract-ocr-fra",
+        )
+
+    image_bytes = await file.read()
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Image vide")
+
+    def _run() -> dict:
+        from services.ocr_email import ocr_email_image
+        from services.phishing_enrichment import enrich_phishing_report
+
+        ocr = ocr_email_image(image_bytes)
+        text = ocr.get("augmented_text") or ocr.get("extracted_text") or ""
+        arts = ocr.get("artifacts") or {}
+        urls = list(arts.get("urls") or [])
+
+        if not text.strip():
             return {
                 "success": False,
-                "extracted_text": "",
-                "filename": file.filename,
-                "message": "Aucun texte détecté dans l'image. Vérifiez que l'image contient du texte lisible.",
-                "warning": "L'OCR n'a pas pu extraire de texte. L'image peut être de mauvaise qualité ou ne contenir aucun texte.",
-                "ocr_errors": ocr_errors if ocr_errors else [],
-                "image_info": {
-                    "original_size": f"{width}x{height}",
-                    "processed_size": f"{gray_image.size[0]}x{gray_image.size[1]}" if 'gray_image' in locals() else "N/A"
-                }
+                "ocr": ocr,
+                "message": "Aucun texte extrait — analyse impossible",
             }
-        
-        return {
-            "success": True,
-            "extracted_text": cleaned_text,
-            "filename": file.filename,
-            "message": f"Texte extrait avec succès ({len(cleaned_text)} caractères, {word_count} mots, {line_count} lignes)",
-            "statistics": {
-                "characters": len(cleaned_text),
-                "words": word_count,
-                "lines": line_count,
-                "has_email": has_email,
-                "has_url": has_url
-            },
-            "image_info": {
-                "original_size": f"{width}x{height}",
-                "processed_size": f"{gray_image.size[0]}x{gray_image.size[1]}"
-            },
-            "ocr_errors": ocr_errors if ocr_errors else []
+
+        report = guardian.analyze(email_text=text, urls=urls or None)
+        result = report.as_dict()
+        enrich_phishing_report(result, email_text=text, urls=urls or None)
+
+        url_rows = result.get("urls") or []
+        result["statistics"] = {
+            "total_urls_analyzed": len(url_rows),
+            "phishing_urls": len([u for u in url_rows if u.get("label") == "phishing"]),
+            "legitimate_urls": len(
+                [u for u in url_rows if u.get("label") in ("legitime", "legitimate")]
+            ),
+            "email_analyzed": bool(result.get("email")),
+            "email_is_phishing": (
+                (result.get("email") or {}).get("label") == "phishing"
+            ),
+            "max_score": (result.get("synthetique") or {}).get("score", 0),
+            "intel_boost": (result.get("synthetique") or {}).get("boost_intel", 0),
+            "sources_ok": (result.get("enrichment") or {}).get("sources_ok") or [],
+            "ocr_emails": len(arts.get("emails") or []),
+            "ocr_urls": len(arts.get("urls") or []),
         }
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_msg = str(e)
-        if "tesseract" in error_msg.lower() or "not found" in error_msg.lower():
-            raise HTTPException(
-                status_code=503,
-                detail=f"Tesseract OCR non trouvé. Installez Tesseract depuis https://github.com/UB-Mannheim/tesseract/wiki. Erreur: {error_msg}"
-            )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Erreur lors de l'extraction OCR: {error_msg}"
-        )
+        result["success"] = True
+        result["ocr"] = {
+            "extracted_text": ocr.get("extracted_text"),
+            "artifacts": arts,
+            "statistics": ocr.get("statistics"),
+            "message": ocr.get("message"),
+            "filename": file.filename,
+        }
+        result["source"] = "screenshot"
+        return result
+
+    try:
+        return await asyncio.to_thread(_run)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur analyse capture: {exc}")
 
 
 @app.post("/api/analyze")
