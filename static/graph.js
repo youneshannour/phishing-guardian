@@ -6,12 +6,13 @@ const GraphUI = (() => {
   let currentGraph = null;
   let lastInvestigation = null;
   let busy = false;
+  let renderToken = 0;
 
   const TYPE_COLORS = {
-    email: "#60a5fa",
+    email: "#3d8bfd",
     username: "#64748b",
-    domain: "#34d399",
-    ip: "#fbbf24",
+    domain: "#1ec98a",
+    ip: "#38bdf8",
     url: "#94a3b8",
     company: "#fb923c",
     unknown: "#94a3b8",
@@ -30,7 +31,11 @@ const GraphUI = (() => {
     });
     exportJsonBtn?.addEventListener("click", exportJson);
     exportPngBtn?.addEventListener("click", exportPng);
-    fitBtn?.addEventListener("click", () => cy?.fit(undefined, 40));
+    fitBtn?.addEventListener("click", () => {
+      if (!cy) return;
+      cy.resize();
+      cy.fit(undefined, 48);
+    });
     clearBtn?.addEventListener("click", clearGraph);
 
     if (typeof cytoscape === "undefined") {
@@ -57,10 +62,30 @@ const GraphUI = (() => {
       ${m.target ? `<span>Cible : <code>${esc(m.target)}</code></span>` : ""}`;
   }
 
+  function waitForVisible(el, timeoutMs = 800) {
+    return new Promise((resolve) => {
+      const start = Date.now();
+      const tick = () => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width >= 40 && rect.height >= 40) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+          return;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
   async function loadFromInvestigation(investigation) {
     if (!investigation) return;
     lastInvestigation = investigation;
     setStatus("Construction du graphe…", "loading");
+    showPanel();
 
     try {
       const res = await fetch("/api/graph/from-investigation", {
@@ -70,14 +95,16 @@ const GraphUI = (() => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Erreur serveur");
-      renderGraph(data.graph, data.cytoscape);
-      window.updateTerminal?.(`[GRAPH] ${data.graph.meta?.node_count || 0} nœuds, ${data.graph.meta?.edge_count || 0} liens`);
+      await renderGraph(data.graph, data.cytoscape);
+      window.updateTerminal?.(
+        `[GRAPH] ${data.graph.meta?.node_count || 0} nœuds, ${data.graph.meta?.edge_count || 0} liens`
+      );
     } catch (err) {
       setStatus(`Erreur : ${err.message}`, "error");
     }
   }
 
-  function renderGraph(graph, cytoscapeData) {
+  async function renderGraph(graph, cytoscapeData) {
     if (typeof cytoscape === "undefined") {
       setStatus("Cytoscape.js indisponible", "error");
       return;
@@ -87,11 +114,77 @@ const GraphUI = (() => {
     const container = document.getElementById("cyGraph");
     if (!container) return;
 
-    const elements = cytoscapeData?.elements || [];
+    const token = ++renderToken;
+    showPanel();
+    await waitForVisible(container);
+    if (token !== renderToken) return;
+
+    const rawList = Array.isArray(cytoscapeData?.elements) ? cytoscapeData.elements : [];
+    const isEdge = (d) => d && d.source != null && d.target != null;
+
+    const nodeIds = new Set(
+      rawList
+        .filter((el) => el?.data?.id && !isEdge(el.data))
+        .map((el) => el.data.id)
+    );
+
+    // Fallback si le serveur n'a pas fourni le format Cytoscape
+    let rawElements = rawList;
+    if (!rawElements.length) {
+      rawElements = [];
+      for (const node of graph?.nodes || []) {
+        rawElements.push({
+          data: {
+            id: node.id,
+            label: node.label,
+            type: node.type,
+            is_root: !!node.is_root,
+            color: node.color || TYPE_COLORS[node.type] || TYPE_COLORS.unknown,
+            icon: node.icon,
+            source: node.source,
+          },
+        });
+        nodeIds.add(node.id);
+      }
+      for (const edge of graph?.edges || []) {
+        rawElements.push({
+          data: {
+            id: edge.id,
+            source: edge.source,
+            target: edge.target,
+            label: edge.label || "",
+            relation: edge.relation || "",
+          },
+        });
+      }
+    }
+
+    const elements = rawElements.filter((el) => {
+      const d = el?.data;
+      if (!d?.id) return false;
+      if (isEdge(d)) {
+        return nodeIds.has(d.source) && nodeIds.has(d.target);
+      }
+      return true;
+    }).map((el) => {
+      const d = { ...el.data };
+      if (!isEdge(d)) {
+        d.is_root = !!d.is_root;
+        d.color = d.color || TYPE_COLORS[d.type] || TYPE_COLORS.unknown;
+        d.label = d.label || d.id;
+      }
+      return { data: d };
+    });
 
     if (cy) {
       cy.destroy();
       cy = null;
+    }
+
+    // Forcer une taille minimale avant init (évite canvas 0×0)
+    if (container.clientHeight < 200) {
+      container.style.minHeight = "420px";
+      container.style.height = "420px";
     }
 
     cy = cytoscape({
@@ -107,19 +200,22 @@ const GraphUI = (() => {
             color: "#e2e8f0",
             "text-outline-color": "#030508",
             "text-outline-width": 2,
+            "text-valign": "bottom",
+            "text-halign": "center",
+            "text-margin-y": 6,
             "text-wrap": "ellipsis",
-            "text-max-width": "90px",
-            width: 42,
-            height: 42,
+            "text-max-width": "100px",
+            width: 44,
+            height: 44,
             "border-width": 2,
-            "border-color": "rgba(255,255,255,0.15)",
+            "border-color": "rgba(255,255,255,0.18)",
           },
         },
         {
-          selector: "node[is_root = true]",
+          selector: "node[?is_root]",
           style: {
-            width: 54,
-            height: 54,
+            width: 58,
+            height: 58,
             "border-width": 3,
             "border-color": "#4f83f1",
             "font-weight": "bold",
@@ -143,18 +239,38 @@ const GraphUI = (() => {
             "curve-style": "bezier",
             label: "data(label)",
             "font-size": "8px",
-            color: "#64748b",
+            color: "#94a3b8",
             "text-rotation": "autorotate",
+            "text-background-color": "#030508",
+            "text-background-opacity": 0.7,
+            "text-background-padding": 2,
           },
         },
       ],
-      layout: { name: "cose", animate: true, padding: 40, nodeRepulsion: 8000, idealEdgeLength: 100 },
-      wheelSensitivity: 0.3,
+      layout: {
+        name: "cose",
+        animate: false,
+        padding: 48,
+        randomize: true,
+        componentSpacing: 80,
+        nestingFactor: 1.2,
+        gravity: 1,
+        numIter: 1200,
+        initialTemp: 200,
+        coolingFactor: 0.95,
+        minTemp: 1.0,
+        nodeRepulsion: () => 9000,
+        idealEdgeLength: () => 110,
+        edgeElasticity: () => 100,
+        nodeOverlap: 24,
+      },
+      wheelSensitivity: 0.25,
+      minZoom: 0.2,
+      maxZoom: 3,
     });
 
     cy.on("tap", "node", (evt) => {
-      const node = evt.target;
-      showNodeDetail(node.data());
+      showNodeDetail(evt.target.data());
     });
 
     cy.on("dbltap", "node", (evt) => {
@@ -162,9 +278,21 @@ const GraphUI = (() => {
       if (!d.is_root) pivotNode(d.label, d.type);
     });
 
+    // Resize après affichage du panneau (sinon nœuds empilés / canvas vide)
+    requestAnimationFrame(() => {
+      if (!cy || token !== renderToken) return;
+      cy.resize();
+      cy.fit(undefined, 48);
+      setTimeout(() => {
+        if (!cy || token !== renderToken) return;
+        cy.resize();
+        cy.fit(undefined, 48);
+      }, 80);
+    });
+
     setMeta(graph);
-    setStatus(`${graph.meta?.node_count || 0} entités reliées`, "ok");
-    showPanel();
+    const n = graph.meta?.node_count || elements.filter((e) => !isEdge(e.data)).length;
+    setStatus(n ? `${n} entités reliées` : "Aucune entité", n ? "ok" : "idle");
   }
 
   function showNodeDetail(data) {
@@ -200,6 +328,7 @@ const GraphUI = (() => {
     if (!target || busy) return;
     busy = true;
     setStatus(`Pivot sur ${target}…`, "loading");
+    showPanel();
 
     try {
       const res = await fetch("/api/graph/pivot", {
@@ -215,8 +344,10 @@ const GraphUI = (() => {
       if (!res.ok) throw new Error(data.detail || "Erreur pivot");
 
       lastInvestigation = data.investigation;
-      renderGraph(data.graph, data.cytoscape);
-      window.updateTerminal?.(`[GRAPH] Pivot ${target} — ${data.graph.meta?.node_count || 0} nœuds`);
+      await renderGraph(data.graph, data.cytoscape);
+      window.updateTerminal?.(
+        `[GRAPH] Pivot ${target} — ${data.graph.meta?.node_count || 0} nœuds`
+      );
     } catch (err) {
       setStatus(`Pivot échoué : ${err.message}`, "error");
     } finally {
@@ -229,15 +360,20 @@ const GraphUI = (() => {
   }
 
   function clearGraph() {
+    renderToken += 1;
     if (cy) {
       cy.destroy();
       cy = null;
     }
     currentGraph = null;
     lastInvestigation = null;
-    document.getElementById("graphNodeDetail").innerHTML =
-      '<p class="graph-side-empty">Cliquez sur un nœud pour voir les détails et lancer un pivot.</p>';
-    document.getElementById("graphMeta").innerHTML = "";
+    const detail = document.getElementById("graphNodeDetail");
+    if (detail) {
+      detail.innerHTML =
+        '<p class="graph-side-empty">Cliquez sur un nœud pour voir les détails et lancer un pivot.</p>';
+    }
+    const meta = document.getElementById("graphMeta");
+    if (meta) meta.innerHTML = "";
     setStatus("Graphe effacé", "idle");
   }
 
@@ -273,7 +409,11 @@ const GraphUI = (() => {
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
-  try { GraphUI.init(); } catch (e) { console.error("[GRAPH]", e); }
+  try {
+    GraphUI.init();
+  } catch (e) {
+    console.error("[GRAPH]", e);
+  }
 });
 
 window.GraphUI = GraphUI;

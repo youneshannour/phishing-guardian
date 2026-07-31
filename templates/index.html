@@ -200,10 +200,10 @@
  <div class="graph-legend">
  <span style="--c:#3d8bfd">Email</span>
  <span style="--c:#64748b">Pseudo</span>
- <span style="--c:#0f766e">Domaine</span>
- <span style="--c:#2563eb">IP</span>
- <span style="--c:#64748b">URL</span>
- <span style="--c:#475569">Org</span>
+ <span style="--c:#1ec98a">Domaine</span>
+ <span style="--c:#38bdf8">IP</span>
+ <span style="--c:#94a3b8">URL</span>
+ <span style="--c:#fb923c">Org</span>
  </div>
  </div>
  <aside class="graph-side glass-panel">
@@ -526,7 +526,10 @@
  <div id="playbookList" class="pb-playbook-list">
  <div class="pb-spinner" style="margin:2rem auto"></div>
  </div>
- <div class="pb-col-label" style="margin-top:1.25rem">Historique récent</div>
+ <div class="pb-col-label pb-history-label" style="margin-top:1.25rem">
+ <span>Historique récent</span>
+ <button type="button" id="playbookHistoryClear" class="pb-history-clear hidden" title="Vider l'historique">Vider</button>
+ </div>
  <div id="playbookHistory" class="pb-history-list">
  <p class="pb-history-empty" style="font-size:0.75rem;color:var(--text-3);padding:0.5rem 0">Aucune investigation récente.</p>
  </div>
@@ -777,9 +780,9 @@
  <script src="/static/matrix.js?v=8.5"></script>
  <script src="/static/effects.js?v=8.5"></script>
  <script src="/static/app.js?v=9.1"></script>
- <script src="/static/playbooks.js?v=8.7"></script>
+ <script src="/static/playbooks.js?v=9.3"></script>
  <script src="/static/investigator-ai.js?v=9.2"></script>
- <script src="/static/graph.js?v=8.5"></script>
+ <script src="/static/graph.js?v=9.3"></script>
  <script src="/static/timeline.js?v=8.7"></script>
  <script src="/static/watch.js?v=8.5"></script>
  <script src="/static/workspace.js?v=8.5"></script>

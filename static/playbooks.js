@@ -8,8 +8,9 @@ const PlaybooksUI = (() => {
  let lastResult = null;
  let suggestTimer = null;
  let loadingInterval = null;
- const HISTORY_KEY = "pg_investigation_history";
+ const HISTORY_KEY = "pg_investigation_history_v2";
  const HISTORY_MAX = 12;
+ const LEGACY_HISTORY_KEYS = ["pg_investigation_history"];
 
  const RISK_COLORS = {
  critical: "#ef4444",
@@ -45,8 +46,20 @@ const PlaybooksUI = (() => {
  if (!targetInput || !runBtn) return;
 
  loadPlaybooks();
+ purgeLegacyHistory();
+ // One-shot : vider l'historique encombrant demandé
+ try {
+ if (!localStorage.getItem("pg_history_cleared_v1")) {
+ clearHistory({ silent: true });
+ localStorage.setItem("pg_history_cleared_v1", "1");
+ }
+ } catch (_) { /* ignore */ }
  renderHistory();
  document.getElementById("playbookHistory")?.addEventListener("click", onHistoryClick);
+ document.getElementById("playbookHistoryClear")?.addEventListener("click", (e) => {
+ e.preventDefault();
+ clearHistory();
+ });
 
  targetInput.addEventListener("input", () => {
  clearTimeout(suggestTimer);
@@ -728,6 +741,21 @@ const PlaybooksUI = (() => {
  });
  }
 
+ function purgeLegacyHistory() {
+ LEGACY_HISTORY_KEYS.forEach((key) => {
+ try { localStorage.removeItem(key); } catch (_) { /* ignore */ }
+ });
+ }
+
+ function clearHistory(opts = {}) {
+ try { localStorage.removeItem(HISTORY_KEY); } catch (_) { /* ignore */ }
+ purgeLegacyHistory();
+ renderHistory();
+ if (!opts.silent) {
+ window.updateTerminal?.("Historique récent vidé");
+ }
+ }
+
  function loadHistory() {
  try {
  return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
@@ -755,6 +783,8 @@ const PlaybooksUI = (() => {
  const el = document.getElementById("playbookHistory");
  if (!el) return;
  const list = loadHistory();
+ const clearBtn = document.getElementById("playbookHistoryClear");
+ if (clearBtn) clearBtn.classList.toggle("hidden", !list.length);
  if (!list.length) {
  el.innerHTML = `<p class="pb-history-empty" style="font-size:0.75rem;color:var(--text-3);padding:0.5rem 0">Aucune investigation récente.</p>`;
  return;
@@ -802,7 +832,7 @@ const PlaybooksUI = (() => {
  return list[0]?.result || null;
  }
 
- return { init, getLastResult, getLatestHistoryResult };
+ return { init, getLastResult, getLatestHistoryResult, clearHistory };
 })();
 
 window.PlaybooksUI = PlaybooksUI;

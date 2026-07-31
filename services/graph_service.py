@@ -288,27 +288,36 @@ def merge_graphs(base: Dict[str, Any], incoming: Dict[str, Any]) -> Dict[str, An
 def graph_to_cytoscape(graph: Dict[str, Any]) -> Dict[str, Any]:
     """Format Cytoscape.js elements."""
     elements = []
+    node_ids: Set[str] = set()
     for node in graph.get("nodes", []):
+        nid = node.get("id")
+        if not nid:
+            continue
+        node_ids.add(nid)
         elements.append(
             {
                 "data": {
-                    "id": node["id"],
-                    "label": node["label"],
-                    "type": node["type"],
-                    "is_root": node.get("is_root", False),
-                    "color": node.get("color"),
+                    "id": nid,
+                    "label": node.get("label") or nid,
+                    "type": node.get("type") or "unknown",
+                    "is_root": bool(node.get("is_root", False)),
+                    "color": node.get("color") or ENTITY_COLORS["unknown"],
                     "icon": node.get("icon"),
                     "source": node.get("source"),
                 }
             }
         )
     for edge in graph.get("edges", []):
+        src = edge.get("source")
+        tgt = edge.get("target")
+        if not src or not tgt or src not in node_ids or tgt not in node_ids:
+            continue
         elements.append(
             {
                 "data": {
-                    "id": edge["id"],
-                    "source": edge["source"],
-                    "target": edge["target"],
+                    "id": edge.get("id") or f"edge_{src}_{tgt}",
+                    "source": src,
+                    "target": tgt,
                     "label": edge.get("label", ""),
                     "relation": edge.get("relation", ""),
                 }
