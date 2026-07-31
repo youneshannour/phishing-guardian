@@ -565,7 +565,7 @@ function initShodan() {
  headers: { "Content-Type": "application/json" },
  body: JSON.stringify({ ip }),
  });
- if (!res.ok) throw new Error((await res.json()).detail || "Error");
+ if (!res.ok) throw new Error(formatApiDetail((await res.json()).detail) || "Error");
  const data = await res.json();
  renderShodanIp(data, el);
  updateTerminal(`[SHODAN] Query complete for ${ip}`);
@@ -590,7 +590,7 @@ function initShodan() {
  headers: { "Content-Type": "application/json" },
  body: JSON.stringify({ query }),
  });
- if (!res.ok) throw new Error((await res.json()).detail || "Error");
+ if (!res.ok) throw new Error(formatApiDetail((await res.json()).detail) || "Error");
  const data = await res.json();
  renderShodanSearch(data, el);
  updateTerminal("[SHODAN] Search complete");
@@ -602,10 +602,29 @@ function initShodan() {
  }
 }
 
+function formatApiDetail(detail) {
+ if (detail == null) return "Error";
+ if (typeof detail === "string") return detail;
+ if (Array.isArray(detail)) {
+ return detail.map((d) => d?.msg || d?.detail || JSON.stringify(d)).join(" · ");
+ }
+ if (typeof detail === "object") return detail.msg || detail.detail || JSON.stringify(detail);
+ return String(detail);
+}
+
+function vulnsToList(vulns) {
+ if (!vulns) return [];
+ if (Array.isArray(vulns)) return vulns.map(String);
+ if (typeof vulns === "object") return Object.keys(vulns);
+ return [String(vulns)];
+}
+
 function renderShodanIp(data, el) {
  const analysis = data.analysis || {};
  const services = data.services || [];
  const geoloc = data.geolocation || {};
+ const vulns = vulnsToList(data.vulns);
+ const vulnCount = analysis.total_vulns ?? vulns.length;
  
  el.innerHTML = `
  <div class="result-hacking mb-3">
@@ -616,7 +635,7 @@ function renderShodanIp(data, el) {
  <div>OS: ${data.os || "N/A"}</div>
  <div>PORTS_OPEN: <span class="text-blue-300 font-mono font-bold">${(data.ports || []).join(", ") || "N/A"}</span> (${analysis.total_ports || 0} total)</div>
  <div>HOSTNAMES: <span class="text-amber-300">${(data.hostnames || []).join(", ") || "N/A"}</span></div>
- <div>VULNS: <span class="text-red-300 font-bold">${(data.vulns || []).join(", ") || "None"}</span> (${analysis.total_vulns || 0} total)</div>
+ <div>VULNS: <span class="text-red-300 font-bold">${vulns.join(", ") || "None"}</span> (${vulnCount} total)</div>
  ${geoloc.country ? `<div>LOCATION: ${geoloc.city || ""} ${geoloc.country || ""}</div>` : ""}
  <div class="text-green-600 mt-2">RISK_LEVEL: <span class="${analysis.risk_level === 'high' ? 'text-red-400' : analysis.risk_level === 'medium' ? 'text-yellow-400' : 'text-green-300'}">${(analysis.risk_level || 'low').toUpperCase()}</span></div>
  <div class="text-green-600">LAST_UPDATE: ${data.last_update || "N/A"}</div>
@@ -744,7 +763,7 @@ function initAbuseIPDB() {
  headers: { "Content-Type": "application/json" },
  body: JSON.stringify({ ip }),
  });
- if (!res.ok) throw new Error((await res.json()).detail || "Error");
+ if (!res.ok) throw new Error(formatApiDetail((await res.json()).detail) || "Error");
  const data = await res.json();
  renderAbuseIPDB(data, el);
  updateTerminal("[ABUSEIPDB] Check complete");
@@ -984,7 +1003,7 @@ function initExifTool() {
 
  try {
  const res = await fetch("/api/exiftool", { method: "POST", body: formData });
- if (!res.ok) throw new Error((await res.json()).detail || "Error");
+ if (!res.ok) throw new Error(formatApiDetail((await res.json()).detail) || "Error");
  const data = await res.json();
  renderExifTool(data, el);
  updateTerminal("[EXIFTOOL] Extraction complete");

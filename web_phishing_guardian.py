@@ -1,10 +1,19 @@
 import os
+from pathlib import Path
+
+# Charger .env AVANT les imports services (Ollama, clés API, etc.)
+from dotenv import load_dotenv
+
+load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
+load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
+
 import subprocess
 import json
 import io
 import re
+import uuid
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, List, Optional
 from datetime import datetime
 import logging
@@ -16,7 +25,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import requests
-from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +72,6 @@ from services.session_auth import (
     session_username_from_request,
     verify_credentials,
 )
-
-load_dotenv()
-load_dotenv(Path(__file__).resolve().parent.parent / ".env", override=True)
-load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 BASE_DIR = Path(__file__).parent
 
@@ -474,60 +478,106 @@ async def api_analyze(payload: AnalyzeRequest) -> Any:
 
 @app.post("/api/shodan/ip")
 async def api_shodan_ip(payload: ShodanIPRequest) -> Any:
-    """Enrichissement IP avancé via Shodan avec analyse détaillée."""
-    info = shodan_scanner.check_ip_shodan(payload.ip)
-    if not info:
-        raise HTTPException(status_code=404, detail="Aucune information trouvée pour cette IP.")
-    
-    # Enrichir avec plus de détails
-    enriched = {
-        **info,
-        "analysis": {
-            "total_ports": len(info.get("ports", [])),
-            "total_hostnames": len(info.get("hostnames", [])),
-            "total_vulns": len(info.get("vulns", [])),
-            "risk_level": "high" if len(info.get("vulns", [])) > 0 else ("medium" if len(info.get("ports", [])) > 10 else "low"),
-        },
-        "services": [],
-        "geolocation": {},
-    }
-    
-    # Extraire les services détaillés
-    for service_data in info.get("data", []):
-        service = {
-            "port": service_data.get("port"),
-            "product": service_data.get("product"),
-            "version": service_data.get("version"),
-            "banner": service_data.get("data", "")[:200] if service_data.get("data") else None,
-            "http": service_data.get("http") if "http" in service_data else None,
+    """Enrichissement IP avancé via Shodan."""
+
+    def _run() -> dict:
+        from services.osint_tools import run_shodan_ip
+
+        data = run_shodan_ip(payload.ip.strip())
+        if data.get("unavailable"):
+            raise HTTPException(status_code=503, detail=data.get("error") or "Shodan non configuré")
+        if not data.get("success"):
+            raise HTTPException(status_code=404, detail=data.get("error") or "Aucune info Shodan")
+
+        info = data.get("data") or {}
+        vulns_raw = data.get("vulns") if data.get("vulns") is not None else info.get("vulns")
+        if isinstance(vulns_raw, dict):
+            vulns = list(vulns_raw.keys())
+        elif isinstance(vulns_raw, list):
+            vulns = [str(v) for v in vulns_raw]
+        else:
+            vulns = []
+
+        ports = data.get("ports") or info.get("ports") or []
+        hostnames = data.get("hostnames") or info.get("hostnames") or []
+
+        enriched = {
+            "success": True,
+            "ip": data.get("ip") or payload.ip,
+            "org": data.get("org") or info.get("org"),
+            "isp": info.get("isp"),
+            "os": info.get("os"),
+            "ports": ports,
+            "hostnames": hostnames,
+            "vulns": vulns,
+            "last_update": info.get("last_update"),
+            "analysis": {
+                "total_ports": len(ports),
+                "total_hostnames": len(hostnames),
+                "total_vulns": len(vulns),
+                "risk_level": data.get("risk_level")
+                or ("high" if vulns else "medium" if len(ports) > 10 else "low"),
+            },
+            "services": [],
+            "geolocation": {},
         }
-        enriched["services"].append(service)
-    
-    # Géolocalisation si disponible
-    if info.get("data"):
-        for data_item in info.get("data", []):
+
+        for service_data in info.get("data", []) or []:
+            enriched["services"].append(
+                {
+                    "port": service_data.get("port"),
+                    "product": service_data.get("product"),
+                    "version": service_data.get("version"),
+                    "banner": (service_data.get("data") or "")[:200] or None,
+                    "http": service_data.get("http") if "http" in service_data else None,
+                }
+            )
+
+        for data_item in info.get("data", []) or []:
             if "location" in data_item:
+                loc = data_item["location"] or {}
                 enriched["geolocation"] = {
-                    "country": data_item["location"].get("country_name"),
-                    "city": data_item["location"].get("city"),
-                    "latitude": data_item["location"].get("latitude"),
-                    "longitude": data_item["location"].get("longitude"),
+                    "country": loc.get("country_name"),
+                    "city": loc.get("city"),
+                    "latitude": loc.get("latitude"),
+                    "longitude": loc.get("longitude"),
                 }
                 break
-    
-    return enriched
+        return enriched
+
+    try:
+        return await asyncio.to_thread(_run)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur Shodan: {exc}")
 
 
 @app.post("/api/shodan/search")
 async def api_shodan_search(payload: ShodanSearchRequest) -> Any:
     """Recherche Shodan avancée."""
-    results = shodan_scanner.search_shodan(payload.query)
-    if results is None:
-        raise HTTPException(
-            status_code=502,
-            detail="Erreur lors de l'appel à l'API Shodan (clé, quota ou réseau).",
-        )
-    return results
+
+    def _run() -> dict:
+        from services.osint_tools import run_shodan_search
+
+        data = run_shodan_search(payload.query.strip())
+        if data.get("unavailable"):
+            raise HTTPException(status_code=503, detail=data.get("error") or "Shodan non configuré")
+        if not data.get("success"):
+            raise HTTPException(status_code=404, detail=data.get("error") or "Aucun résultat")
+        # UI attend { matches, total }
+        return {
+            "matches": data.get("matches") or [],
+            "total": data.get("matches_count") or len(data.get("matches") or []),
+            "query": data.get("query"),
+        }
+
+    try:
+        return await asyncio.to_thread(_run)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur Shodan search: {exc}")
 
 
 @app.post("/api/leakcheck")
@@ -610,113 +660,125 @@ async def api_leakcheck(payload: LeakCheckRequest) -> Any:
 @app.post("/api/exiftool")
 async def api_exiftool(file: UploadFile = File(...)) -> Any:
     """Extraction métadonnées image via ExifTool."""
-    # Sauvegarder temporairement
     temp_dir = BASE_DIR / "temp"
     temp_dir.mkdir(exist_ok=True)
-    temp_path = temp_dir / file.filename
-    
+    suffix = Path(file.filename or "upload.bin").suffix or ".bin"
+    temp_path = temp_dir / f"exif-{uuid.uuid4().hex}{suffix}"
+
     try:
-        with open(temp_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        
-        # Appel ExifTool - chercher dans plusieurs emplacements
-        exiftool_paths = [
-            str(BASE_DIR / "exiftool" / "exiftool.exe"),  # Dossier local (priorité)
-            str(BASE_DIR / "exiftool.exe"),  # Racine du projet
-            "exiftool",  # Dans le PATH
-            "exiftool.exe",  # Windows PATH
-            "C:\\Windows\\exiftool.exe",  # Windows system
-        ]
-        
-        exiftool_cmd = None
-        for path in exiftool_paths:
-            try:
-                result = subprocess.run(
-                    [path, "-ver"],
-                    capture_output=True,
-                    timeout=2,
-                )
-                if result.returncode == 0 or "ExifTool" in (result.stdout or result.stderr or ""):
-                    exiftool_cmd = path
-                    break
-            except (FileNotFoundError, subprocess.TimeoutExpired):
-                continue
-        
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Fichier vide")
+        temp_path.write_bytes(content)
+
+        exiftool_cmd = _resolve_exiftool_cmd()
         if not exiftool_cmd:
             raise HTTPException(
                 status_code=503,
-                detail="ExifTool non installé. Téléchargez-le depuis https://exiftool.org/ et placez exiftool.exe dans le PATH ou dans le dossier du projet.",
+                detail=(
+                    "ExifTool non installé. Sous Linux: sudo apt install libimage-exiftool-perl. "
+                    "Sous Windows: placez exiftool.exe dans le dossier exiftool/ du projet "
+                    "(https://exiftool.org/)."
+                ),
             )
-        
-        try:
+
+        def _run() -> dict:
             result = subprocess.run(
-                [exiftool_cmd, "-j", "-a", str(temp_path)],
+                [exiftool_cmd, "-j", "-a", "-G", str(temp_path)],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
             )
-            if result.returncode != 0:
-                raise HTTPException(status_code=500, detail=f"ExifTool error: {result.stderr}")
-            
-            metadata = json.loads(result.stdout)[0] if result.stdout else {}
-            
-            # Analyse avancée des métadonnées
+            if result.returncode != 0 and not (result.stdout or "").strip():
+                raise RuntimeError(result.stderr or "ExifTool a échoué")
+
+            metadata = {}
+            raw = (result.stdout or "").strip()
+            if raw:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list) and parsed:
+                    metadata = parsed[0]
+                elif isinstance(parsed, dict):
+                    metadata = parsed
+
             analysis = {
-                "has_gps": any("GPS" in k for k in metadata.keys()),
-                "has_camera_info": any(k in metadata for k in ["Make", "Model", "Camera"]),
-                "has_software": "Software" in metadata or "ProcessingSoftware" in metadata,
-                "has_author": any(k in metadata for k in ["Artist", "Author", "Creator"]),
-                "file_size": metadata.get("FileSize"),
-                "mime_type": metadata.get("MIMEType"),
+                "has_gps": any("GPS" in str(k) for k in metadata.keys()),
+                "has_camera_info": any(
+                    k in metadata or k.split(":")[-1] in ("Make", "Model", "Camera")
+                    for k in metadata.keys()
+                ),
+                "has_software": any("Software" in str(k) for k in metadata.keys()),
+                "has_author": any(
+                    any(tag in str(k) for tag in ("Artist", "Author", "Creator"))
+                    for k in metadata.keys()
+                ),
+                "file_size": metadata.get("FileSize") or metadata.get("File:FileSize"),
+                "mime_type": metadata.get("MIMEType") or metadata.get("File:MIMEType"),
             }
-            
-            # Extraire GPS si présent
+
+            def _get(*keys):
+                for k in keys:
+                    if k in metadata and metadata[k] not in (None, ""):
+                        return metadata[k]
+                return None
+
             gps_data = {}
             if analysis["has_gps"]:
-                lat = metadata.get("GPSLatitude")
-                lon = metadata.get("GPSLongitude")
+                lat = _get("GPSLatitude", "Composite:GPSLatitude", "EXIF:GPSLatitude")
+                lon = _get("GPSLongitude", "Composite:GPSLongitude", "EXIF:GPSLongitude")
                 if lat and lon:
                     gps_data = {
                         "latitude": str(lat),
                         "longitude": str(lon),
-                        "google_maps": f"https://www.google.com/maps?q={lat},{lon}" if lat and lon else None,
+                        "google_maps": f"https://www.google.com/maps?q={lat},{lon}",
                     }
-            
-            # Extraire informations caméra
-            camera_info = {}
-            if analysis["has_camera_info"]:
-                camera_info = {
-                    "make": metadata.get("Make"),
-                    "model": metadata.get("Model"),
-                    "lens": metadata.get("LensModel"),
-                    "focal_length": metadata.get("FocalLength"),
-                    "aperture": metadata.get("FNumber"),
-                    "iso": metadata.get("ISO"),
-                    "exposure": metadata.get("ExposureTime"),
-                }
-            
+
+            camera_info = {
+                "make": _get("Make", "EXIF:Make"),
+                "model": _get("Model", "EXIF:Model"),
+                "lens": _get("LensModel", "EXIF:LensModel"),
+                "focal_length": _get("FocalLength", "EXIF:FocalLength"),
+                "aperture": _get("FNumber", "EXIF:FNumber"),
+                "iso": _get("ISO", "EXIF:ISO"),
+                "exposure": _get("ExposureTime", "EXIF:ExposureTime"),
+            }
+
             return {
                 "filename": file.filename,
                 "metadata": metadata,
                 "summary": {
-                    k: v for k, v in metadata.items() 
-                    if k not in ["SourceFile", "ExifToolVersion"] and v
+                    k: v
+                    for k, v in metadata.items()
+                    if k not in ("SourceFile", "ExifToolVersion") and v not in (None, "")
                 },
                 "analysis": analysis,
                 "gps": gps_data,
-                "camera": camera_info,
+                "camera": {k: v for k, v in camera_info.items() if v},
                 "security_flags": {
                     "has_location": analysis["has_gps"],
                     "has_author_info": analysis["has_author"],
-                    "risk_level": "high" if analysis["has_gps"] else ("medium" if analysis["has_author"] else "low"),
+                    "risk_level": (
+                        "high"
+                        if analysis["has_gps"]
+                        else "medium"
+                        if analysis["has_author"]
+                        else "low"
+                    ),
                 },
             }
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Erreur ExifTool: {str(e)}")
+
+        try:
+            return await asyncio.to_thread(_run)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Erreur ExifTool: {exc}")
     finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        try:
+            if temp_path.exists():
+                temp_path.unlink()
+        except OSError:
+            pass
 
 
 @app.post("/api/sherlock")
@@ -881,55 +943,23 @@ async def api_virustotal(payload: VirusTotalRequest) -> Any:
 
 @app.post("/api/abuseipdb")
 async def api_abuseipdb(payload: AbuseIPDBRequest) -> Any:
-    """Check IP reputation avancé via AbuseIPDB avec historique."""
-    api_key = os.getenv("ABUSEIPDB_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Clé API AbuseIPDB non configurée. Ajoutez ABUSEIPDB_API_KEY dans .env",
-        )
-    
+    """Check IP / domaine via AbuseIPDB (fallback local si clé absente)."""
+
+    def _run() -> dict:
+        from services.osint_tools import run_abuseipdb
+
+        data = run_abuseipdb(payload.ip.strip())
+        if not data.get("success") and data.get("unavailable"):
+            raise HTTPException(status_code=503, detail=data.get("error") or "AbuseIPDB indisponible")
+        # Toujours renvoyer le dict service (source + abuseConfidence) pour l'UI
+        return data
+
     try:
-        # Check de base
-        url = "https://api.abuseipdb.com/api/v2/check"
-        headers = {"Key": api_key, "Accept": "application/json"}
-        params = {"ipAddress": payload.ip, "maxAgeInDays": 90, "verbose": ""}
-        response = requests.get(url, headers=headers, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        check_data = data.get("data", {})
-        abuse_confidence = check_data.get("abuseConfidencePercentage", 0)
-        
-        # Récupérer l'historique des rapports
-        reports = []
-        try:
-            reports_url = "https://api.abuseipdb.com/api/v2/check-block"
-            reports_params = {"network": f"{payload.ip}/32", "maxAgeInDays": 90}
-            reports_response = requests.get(reports_url, headers=headers, params=reports_params, timeout=10)
-            if reports_response.status_code == 200:
-                reports_data = reports_response.json()
-                reports = reports_data.get("data", {}).get("reportedAddress", [])[:10]  # Top 10
-        except Exception:
-            pass  # Historique optionnel
-        
-        return {
-            "ip": payload.ip,
-            "data": check_data,
-            "isPublic": check_data.get("isPublic", False),
-            "abuseConfidence": abuse_confidence,
-            "usageType": check_data.get("usageType", "N/A"),
-            "country": check_data.get("countryCode", "N/A"),
-            "domain": check_data.get("domain", "N/A"),
-            "hostnames": check_data.get("hostnames", []),
-            "totalReports": check_data.get("totalReports", 0),
-            "numDistinctUsers": check_data.get("numDistinctUsers", 0),
-            "lastReportedAt": check_data.get("lastReportedAt"),
-            "risk_level": "critical" if abuse_confidence > 75 else ("high" if abuse_confidence > 50 else ("medium" if abuse_confidence > 25 else "low")),
-            "recent_reports": reports,
-        }
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Erreur AbuseIPDB: {str(e)}")
+        return await asyncio.to_thread(_run)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur AbuseIPDB: {exc}")
 
 
 @app.post("/api/whois")
@@ -1255,7 +1285,7 @@ async def api_run_playbook(payload: PlaybookRunRequest) -> Any:
 @app.get("/api/ai/status")
 async def api_ai_status() -> Any:
     """Statut de la connexion Ollama / Investigator AI."""
-    return ai_investigator.check_status()
+    return await asyncio.to_thread(ai_investigator.check_status)
 
 
 @app.post("/api/ai/chat")
@@ -1797,7 +1827,9 @@ async def health():
         "sherlock": _check_sherlock(),
         "skiptracer": _check_skiptracer(),
         "playbooks": True,
-        "investigator_ai": ai_investigator.check_status().get("available", False),
+        "investigator_ai": bool(
+            (lambda s: s.get("available") and s.get("model_available"))(ai_investigator.check_status())
+        ),
         "graph": True,
         "attack_surface_score": True,
         "timeline": True,
@@ -1809,16 +1841,25 @@ async def health():
     }}
 
 
-def _check_exiftool() -> bool:
-    exiftool_paths = [
+def _resolve_exiftool_cmd() -> Optional[str]:
+    """Trouve ExifTool (Windows exeiftool.exe / Linux apt / variantes)."""
+    candidates = [
+        str(BASE_DIR / "exiftool" / "exiftool.exe"),
+        str(BASE_DIR / "exiftool" / "exiftool(-k).exe"),
+        str(BASE_DIR / "exiftool.exe"),
+        str(BASE_DIR / "exiftool(-k).exe"),
         "exiftool",
         "exiftool.exe",
-        str(BASE_DIR / "exiftool" / "exiftool.exe"),
-        str(BASE_DIR / "exiftool.exe"),
+        "/usr/bin/exiftool",
+        "/usr/local/bin/exiftool",
     ]
-    for path in exiftool_paths:
+    for path in candidates:
         try:
-            result = subprocess.run([path, "-ver"], capture_output=True, timeout=2)
+            result = subprocess.run(
+                [path, "-ver"],
+                capture_output=True,
+                timeout=3,
+            )
             stdout = (
                 result.stdout.decode("utf-8", errors="ignore")
                 if isinstance(result.stdout, (bytes, bytearray))
@@ -1829,11 +1870,16 @@ def _check_exiftool() -> bool:
                 if isinstance(result.stderr, (bytes, bytearray))
                 else (result.stderr or "")
             )
-            if result.returncode == 0 or "ExifTool" in (stdout or stderr):
-                return True
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+            blob = f"{stdout}{stderr}"
+            if result.returncode == 0 or "exiftool" in blob.lower() or "image::exiftool" in blob.lower():
+                return path
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError, TypeError):
             continue
-    return False
+    return None
+
+
+def _check_exiftool() -> bool:
+    return _resolve_exiftool_cmd() is not None
 
 
 def _check_sherlock() -> bool:

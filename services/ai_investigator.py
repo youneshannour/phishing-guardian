@@ -10,11 +10,12 @@ from services.entity_resolver import resolve_entity_type, suggest_playbook_id
 from services.nl_target_extractor import extract_targets, pick_best_target, wants_investigation
 from services.playbook_engine import playbook_engine
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 
 PREFERRED_MODELS = (
+    "tinyllama",
     "mistral",
     "llama3.2",
     "llama3",
@@ -41,14 +42,27 @@ Règles :
 class AIInvestigator:
     def __init__(
         self,
-        base_url: str = OLLAMA_BASE_URL,
-        model: str = OLLAMA_MODEL,
-        timeout: int = OLLAMA_TIMEOUT,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[int] = None,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.model = model
-        self.timeout = timeout
         self._active_model: Optional[str] = None
+        self.reload_config(base_url=base_url, model=model, timeout=timeout)
+
+    def reload_config(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> None:
+        """Relit OLLAMA_* depuis l'environnement (après load_dotenv)."""
+        self.base_url = (
+            base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+        ).rstrip("/")
+        self.model = model or os.getenv("OLLAMA_MODEL", "tinyllama")
+        self.timeout = int(
+            timeout if timeout is not None else os.getenv("OLLAMA_TIMEOUT", "120")
+        )
 
     def _resolve_model(self, models: List[str]) -> Optional[str]:
         if not models:
@@ -71,6 +85,7 @@ class AIInvestigator:
         return self._active_model or self.model
 
     def check_status(self) -> Dict[str, Any]:
+        self.reload_config()
         try:
             resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
             resp.raise_for_status()
@@ -82,6 +97,7 @@ class AIInvestigator:
             return {
                 "available": True,
                 "ollama_url": self.base_url,
+                "base_url": self.base_url,
                 "configured_model": self.model,
                 "active_model": resolved,
                 "model_available": model_available,
@@ -92,6 +108,7 @@ class AIInvestigator:
             return {
                 "available": False,
                 "ollama_url": self.base_url,
+                "base_url": self.base_url,
                 "configured_model": self.model,
                 "active_model": None,
                 "model_available": False,

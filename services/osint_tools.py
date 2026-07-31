@@ -769,14 +769,21 @@ def run_shodan_ip(ip: str) -> Dict[str, Any]:
     if not info:
         return {"success": False, "error": "Aucune information Shodan pour cette IP"}
 
-    vuln_count = len(info.get("vulns", []))
+    vuln_raw = info.get("vulns", [])
+    if isinstance(vuln_raw, dict):
+        vulns = list(vuln_raw.keys())
+    elif isinstance(vuln_raw, list):
+        vulns = [str(v) for v in vuln_raw]
+    else:
+        vulns = []
+    vuln_count = len(vulns)
     return {
         "success": True,
         "ip": ip,
         "ports": info.get("ports", []),
         "hostnames": info.get("hostnames", []),
         "org": info.get("org"),
-        "vulns": info.get("vulns", []),
+        "vulns": vulns,
         "vuln_count": vuln_count,
         "risk_level": (
             "high"
