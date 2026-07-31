@@ -187,6 +187,8 @@ const GraphUI = (() => {
       container.style.height = "420px";
     }
 
+    const nodeCount = elements.filter((e) => !isEdge(e.data)).length;
+
     cy = cytoscape({
       container,
       elements,
@@ -248,21 +250,24 @@ const GraphUI = (() => {
         },
       ],
       layout: {
-        name: "cose",
+        name: nodeCount > 20 ? "breadthfirst" : "cose",
         animate: false,
         padding: 48,
-        randomize: true,
-        componentSpacing: 80,
-        nestingFactor: 1.2,
+        directed: true,
+        spacingFactor: nodeCount > 20 ? 1.15 : 1.35,
+        avoidOverlap: true,
+        randomize: nodeCount <= 20,
+        componentSpacing: 60,
+        nestingFactor: 1.1,
         gravity: 1,
-        numIter: 1200,
-        initialTemp: 200,
+        numIter: nodeCount > 20 ? 400 : 900,
+        initialTemp: 120,
         coolingFactor: 0.95,
         minTemp: 1.0,
-        nodeRepulsion: () => 9000,
-        idealEdgeLength: () => 110,
-        edgeElasticity: () => 100,
-        nodeOverlap: 24,
+        nodeRepulsion: () => 6000,
+        idealEdgeLength: () => 90,
+        edgeElasticity: () => 80,
+        nodeOverlap: 20,
       },
       wheelSensitivity: 0.25,
       minZoom: 0.2,
@@ -291,8 +296,11 @@ const GraphUI = (() => {
     });
 
     setMeta(graph);
-    const n = graph.meta?.node_count || elements.filter((e) => !isEdge(e.data)).length;
-    setStatus(n ? `${n} entités reliées` : "Aucune entité", n ? "ok" : "idle");
+    const n = graph.meta?.node_count || nodeCount;
+    const trunc = graph.meta?.truncated
+      ? ` (aperçu — ${graph.meta.entities_total || "?"} entités au total)`
+      : "";
+    setStatus(n ? `${n} entités reliées${trunc}` : "Aucune entité", n ? "ok" : "idle");
   }
 
   function showNodeDetail(data) {

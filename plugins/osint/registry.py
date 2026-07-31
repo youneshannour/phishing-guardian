@@ -111,7 +111,8 @@ class SherlockPlugin(OSINTPlugin):
       entities = [
         Entity(EntityType.USERNAME, data["username"], self.id),
       ]
-      for site, info in (data.get("profiles") or {}).items():
+      # Limiter les URLs entités (évite freeze UI/graphe sur 100+ profils)
+      for site, info in list((data.get("profiles") or {}).items())[:15]:
         url = info.get("url_main") or info.get("url_user") or info.get("url")
         if url:
           entities.append(

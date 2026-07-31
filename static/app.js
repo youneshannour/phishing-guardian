@@ -155,8 +155,19 @@ function initNavigation() {
  window.PrivacyUI?.refreshFromLast?.();
  }
  if (target === "panel-graph") {
- const inv = window.PlaybooksUI?.getLatestHistoryResult?.();
- if (inv) window.GraphUI?.loadFromInvestigation?.(inv);
+ // Afficher le panneau d'abord, charger le graphe ensuite (évite freeze Firefox)
+ window.GraphUI?.showPanel?.();
+ const inv = window.PlaybooksUI?.getLastResult?.()
+ || window.PlaybooksUI?.getLatestHistoryResult?.();
+ if (inv) {
+ setTimeout(() => {
+ try {
+ window.GraphUI?.loadFromInvestigation?.(inv);
+ } catch (err) {
+ console.error("[GRAPH] load failed", err);
+ }
+ }, 50);
+ }
  }
  if (target === "panel-timeline") {
  const inv = window.PlaybooksUI?.getLatestHistoryResult?.();

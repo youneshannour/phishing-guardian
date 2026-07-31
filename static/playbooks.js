@@ -669,20 +669,27 @@ const PlaybooksUI = (() => {
  <p style="padding:0 1rem 1rem;color:var(--text-muted);font-size:0.8125rem">Aucune entité extraite.</p></div>`;
  }
 
+ const MAX_SHOW = 40;
+ const shown = entities.slice(0, MAX_SHOW);
+ const more = entities.length - shown.length;
+
  return `
  <div class="pb-entities">
  <div class="pb-section-title" style="padding:1rem 1rem 0">Entités découvertes (${entities.length})</div>
+ <div style="max-height:280px;overflow:auto">
  <table class="pb-entities-table">
  <thead><tr><th>Type</th><th>Valeur</th><th>Source</th></tr></thead>
  <tbody>
- ${entities.map((e, i) => `
- <tr style="animation-delay:${i * 0.05}s">
+ ${shown.map((e) => `
+ <tr>
  <td><span class="entity-type-badge">${esc(e.type)}</span></td>
  <td><span class="entity-value">${esc(e.value)}</span></td>
  <td>${esc(e.source)}</td>
  </tr>`).join("")}
  </tbody>
  </table>
+ </div>
+ ${more > 0 ? `<p style="padding:8px 1rem 1rem;font-size:0.75rem;color:var(--text-muted)">+ ${more} autres (non affichées pour fluidité — le graphe en montre un aperçu)</p>` : ""}
  </div>`;
  }
 
@@ -807,7 +814,7 @@ const PlaybooksUI = (() => {
  const el = document.getElementById("playbookHistory");
  if (!el) return;
  const clearBtn = document.getElementById("playbookHistoryClear");
- if (clearBtn) clearBtn.classList.add("hidden");
+ if (clearBtn) clearBtn.classList.remove("hidden");
  el.innerHTML = `<p class="pb-history-empty" style="font-size:0.75rem;color:var(--text-3);padding:0.5rem 0">Aucune investigation récente.</p>`;
  }
 

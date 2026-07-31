@@ -26,6 +26,20 @@ ENTITY_ICONS = {
     "unknown": "?",
 }
 
+# Plafonds anti-freeze (Sherlock peut renvoyer 200+ profils)
+MAX_GRAPH_NODES = 40
+MAX_URL_NODES = 12
+MAX_SHERLOCK_PROFILES = 12
+TYPE_PRIORITY = {
+    "email": 0,
+    "username": 1,
+    "domain": 2,
+    "ip": 3,
+    "company": 4,
+    "url": 8,
+    "unknown": 6,
+}
+
 
 def _node_id(entity_type: str, value: str) -> str:
     safe = re.sub(r"[^a-z0-9@._:-]+", "_", value.lower().strip())
@@ -157,14 +171,15 @@ def _infer_from_step(
     if plugin == "sherlock":
         username = data.get("username")
         uid = _ensure_node(nodes, "username", username, source=plugin) if username else root_id
-        for site, info in (data.get("profiles") or {}).items():
+        profiles = list((data.get("profiles") or {}).items())[:MAX_SHERLOCK_PROFILES]
+        for site, info in profiles:
             url = info.get("url_main") or info.get("url_user") or info.get("url")
             if url:
                 url_id = _ensure_node(
                     nodes, "url", url, source=plugin, metadata={"platform": site}
                 )
                 if url_id and uid:
-                    _add_edge(edges, seen, uid, url_id, site, "profile_on")
+                    _add_edge(edges, seen, uid, url_id, site[:18], "profile_on")
 
     if plugin == "shodan_search":
         for match in (data.get("matches") or [])[:10]:
@@ -199,8 +214,20 @@ def build_graph_from_investigation(result: Dict[str, Any]) -> Dict[str, Any]:
 
     _infer_from_target(target, target_type, root_id, nodes, edges, seen)
 
-    for ent in result.get("entities") or []:
+    # Entités prioritaires d'abord (évite 200 nœuds URL Sherlock)
+    entities = list(result.get("entities") or [])
+    entities.sort(
+        key=lambda e: TYPE_PRIORITY.get(e.get("type", "unknown"), 9)
+    )
+    url_count = 0
+    for ent in entities:
         etype = ent.get("type", "unknown")
+        if etype == "url":
+            if url_count >= MAX_URL_NODES:
+                continue
+            url_count += 1
+        if len(nodes) >= MAX_GRAPH_NODES:
+            break
         value = ent.get("value", "")
         source = ent.get("source")
         meta = ent.get("metadata") or {}
@@ -211,9 +238,11 @@ def build_graph_from_investigation(result: Dict[str, Any]) -> Dict[str, Any]:
     for step in result.get("steps") or []:
         if step.get("status") == "success":
             _infer_from_step(step, root_id, nodes, edges, seen)
+            if len(nodes) >= MAX_GRAPH_NODES:
+                break
 
-    # Liens entre entités du même type de relation logique
     _link_email_domain_username(nodes, edges, seen)
+    nodes, edges, truncated = _prune_graph(nodes, edges, root_id)
 
     return {
         "nodes": list(nodes.values()),
@@ -225,8 +254,36 @@ def build_graph_from_investigation(result: Dict[str, Any]) -> Dict[str, Any]:
             "playbook": result.get("playbook_name"),
             "node_count": len(nodes),
             "edge_count": len(edges),
+            "truncated": truncated,
+            "entities_total": len(result.get("entities") or []),
         },
     }
+
+
+def _prune_graph(
+    nodes: Dict[str, Dict[str, Any]],
+    edges: List[Dict[str, Any]],
+    root_id: str,
+) -> Tuple[Dict[str, Dict[str, Any]], List[Dict[str, Any]], bool]:
+    if len(nodes) <= MAX_GRAPH_NODES:
+        return nodes, edges, False
+
+    ranked = sorted(
+        nodes.values(),
+        key=lambda n: (
+            0 if n.get("is_root") or n["id"] == root_id else 1,
+            TYPE_PRIORITY.get(n.get("type", "unknown"), 9),
+            n.get("label", ""),
+        ),
+    )
+    keep_ids = {n["id"] for n in ranked[:MAX_GRAPH_NODES]}
+    if root_id:
+        keep_ids.add(root_id)
+    pruned_nodes = {nid: nodes[nid] for nid in keep_ids if nid in nodes}
+    pruned_edges = [
+        e for e in edges if e["source"] in keep_ids and e["target"] in keep_ids
+    ]
+    return pruned_nodes, pruned_edges, True
 
 
 def _link_email_domain_username(
