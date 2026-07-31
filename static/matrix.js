@@ -14,6 +14,8 @@
   let h = 0;
   let mouseX = -999;
   let mouseY = -999;
+  let paused = false;
+  let frameSkip = 0;
 
   function isLight() {
     return document.documentElement.getAttribute("data-theme") === "light";
@@ -54,6 +56,16 @@
   }
 
   function frame() {
+    if (paused) {
+      requestAnimationFrame(frame);
+      return;
+    }
+    // ~30 fps au lieu de 60 — moins de charge CPU avec le graphe / Firefox
+    frameSkip ^= 1;
+    if (!frameSkip) {
+      requestAnimationFrame(frame);
+      return;
+    }
     const p = palette();
     ctx.fillStyle = p.fade;
     ctx.fillRect(0, 0, w, h);
@@ -87,4 +99,13 @@
   window.addEventListener("resize", resize);
   window.addEventListener("pg-theme-change", resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
+
+  window.PGMatrix = {
+    pause() {
+      paused = true;
+    },
+    resume() {
+      paused = false;
+    },
+  };
 })();

@@ -4,6 +4,7 @@
 const FX = (() => {
   let canvas, ctx, particles, animId;
   let mouse = { x: -1000, y: -1000 };
+  let paused = false;
   const PARTICLE_COUNT = 55;
   const CONNECT_DIST = 130;
   const MOUSE_DIST = 160;
@@ -85,8 +86,20 @@ const FX = (() => {
     }));
   }
 
+  function pause() {
+    paused = true;
+  }
+
+  function resume() {
+    paused = false;
+  }
+
   function animate() {
     if (!ctx) return;
+    if (paused) {
+      animId = requestAnimationFrame(animate);
+      return;
+    }
     const light = isLight();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -202,7 +215,7 @@ const FX = (() => {
     ripple.addEventListener("animationend", () => ripple.remove());
   }
 
-  return { init, countUp, staggerChildren, animateRiskRing, ripple };
+  return { init, countUp, staggerChildren, animateRiskRing, ripple, pause, resume };
 })();
 
 document.addEventListener("DOMContentLoaded", () => FX.init());

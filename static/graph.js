@@ -1,12 +1,17 @@
 /**
- * Graphe de relations OSINT — Cytoscape.js
+ * Graphe de relations OSINT — Cytoscape.js (léger, annulable)
  */
 const GraphUI = (() => {
   let cy = null;
   let currentGraph = null;
   let lastInvestigation = null;
+  let loadedKey = null;
   let busy = false;
   let renderToken = 0;
+  let pendingTimer = null;
+  let abortCtrl = null;
+
+  const MAX_CLIENT_NODES = 20;
 
   const TYPE_COLORS = {
     email: "#3d8bfd",
@@ -18,12 +23,22 @@ const GraphUI = (() => {
     unknown: "#94a3b8",
   };
 
+  function yieldToUI(ms = 0) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function investigationKey(inv) {
+    if (!inv) return null;
+    return String(inv.id || inv.target || "") + ":" + String((inv.entities || []).length);
+  }
+
   function init() {
     const pivotBtn = document.getElementById("graphPivotBtn");
     const exportJsonBtn = document.getElementById("graphExportJson");
     const exportPngBtn = document.getElementById("graphExportPng");
     const fitBtn = document.getElementById("graphFitBtn");
     const clearBtn = document.getElementById("graphClearBtn");
+    const loadBtn = document.getElementById("graphLoadBtn");
 
     pivotBtn?.addEventListener("click", (e) => {
       e.preventDefault();
@@ -33,10 +48,23 @@ const GraphUI = (() => {
     exportPngBtn?.addEventListener("click", exportPng);
     fitBtn?.addEventListener("click", () => {
       if (!cy) return;
-      cy.resize();
-      cy.fit(undefined, 48);
+      try {
+        cy.resize();
+        cy.fit(undefined, 48);
+      } catch (_) { /* ignore */ }
     });
     clearBtn?.addEventListener("click", clearGraph);
+    loadBtn?.addEventListener("click", () => {
+      const inv =
+        lastInvestigation ||
+        window.PlaybooksUI?.getLastResult?.() ||
+        window.PlaybooksUI?.getLatestHistoryResult?.();
+      if (!inv) {
+        setStatus("Aucune investigation — lancez un playbook d'abord", "error");
+        return;
+      }
+      loadFromInvestigation(inv, { navigate: false, force: true });
+    });
 
     if (typeof cytoscape === "undefined") {
       setStatus("Cytoscape.js non chargé", "error");
@@ -62,50 +90,77 @@ const GraphUI = (() => {
       ${m.target ? `<span>Cible : <code>${esc(m.target)}</code></span>` : ""}`;
   }
 
-  function waitForVisible(el, timeoutMs = 800) {
-    return new Promise((resolve) => {
-      const start = Date.now();
-      const tick = () => {
-        const rect = el.getBoundingClientRect();
-        if (rect.width >= 40 && rect.height >= 40) {
-          resolve(true);
-          return;
-        }
-        if (Date.now() - start > timeoutMs) {
-          resolve(false);
-          return;
-        }
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    });
+  function destroyCy() {
+    if (cy) {
+      try {
+        cy.destroy();
+      } catch (_) { /* ignore */ }
+      cy = null;
+    }
+  }
+
+  /** Annule un rendu en cours et libère Cytoscape (appelé en quittant le panneau). */
+  function suspend() {
+    renderToken += 1;
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
+    }
+    if (abortCtrl) {
+      try {
+        abortCtrl.abort();
+      } catch (_) { /* ignore */ }
+      abortCtrl = null;
+    }
+    busy = false;
+    destroyCy();
+    window.PGMatrix?.resume?.();
+    window.FX?.resume?.();
+  }
+
+  function pauseBgFx() {
+    window.PGMatrix?.pause?.();
+    window.FX?.pause?.();
   }
 
   function slimInvestigation(investigation) {
     if (!investigation || typeof investigation !== "object") return investigation;
     const entities = Array.isArray(investigation.entities)
-      ? investigation.entities.slice(0, 40)
+      ? investigation.entities.slice(0, 30)
       : [];
     const steps = (investigation.steps || []).map((step) => {
       const data = step.data || {};
-      // Ne pas renvoyer des centaines de profils Sherlock au endpoint graphe
-      if (step.plugin_id === "sherlock" && data.profiles) {
-        const entries = Object.entries(data.profiles).slice(0, 12);
+      const plugin = step.plugin_id;
+      if (plugin === "sherlock" && data.profiles) {
+        const entries = Object.entries(data.profiles).slice(0, 10);
         return {
-          ...step,
+          plugin_id: plugin,
+          plugin_name: step.plugin_name,
+          status: step.status,
           data: {
             username: data.username,
-            count: data.count || entries.length,
-            sites_found: (data.sites_found || []).slice(0, 12),
+            count: Math.min(data.count || entries.length, 10),
+            sites_found: (data.sites_found || []).slice(0, 10),
             profiles: Object.fromEntries(entries),
           },
         };
       }
+      // Ne garder que des champs utiles / courts pour éviter un JSON énorme
+      const slimData = {};
+      for (const [k, v] of Object.entries(data)) {
+        if (v == null || typeof v === "boolean" || typeof v === "number") {
+          slimData[k] = v;
+        } else if (typeof v === "string") {
+          slimData[k] = v.length > 300 ? v.slice(0, 300) : v;
+        } else if (Array.isArray(v)) {
+          slimData[k] = v.slice(0, 12);
+        }
+      }
       return {
-        plugin_id: step.plugin_id,
+        plugin_id: plugin,
         plugin_name: step.plugin_name,
         status: step.status,
-        data: data,
+        data: slimData,
       };
     });
     return {
@@ -119,28 +174,84 @@ const GraphUI = (() => {
     };
   }
 
+  function scheduleLoad(investigation, opts = {}) {
+    if (pendingTimer) clearTimeout(pendingTimer);
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null;
+      loadFromInvestigation(investigation, opts);
+    }, opts.delayMs || 40);
+  }
+
   async function loadFromInvestigation(investigation, opts = {}) {
     if (!investigation) return;
+    const key = investigationKey(investigation);
     const navigate = opts.navigate !== false;
+    const force = !!opts.force;
+
     lastInvestigation = investigation;
-    setStatus("Construction du graphe…", "loading");
     if (navigate) showPanel();
 
+    // Déjà affiché pour cette investigation → ne pas reconstruire (évite freeze)
+    if (!force && key && key === loadedKey && cy && currentGraph) {
+      setStatus("Graphe déjà chargé", "ok");
+      setMeta(currentGraph);
+      return;
+    }
+
+    if (busy && !force) return;
+    busy = true;
+    setStatus("Construction du graphe…", "loading");
+    pauseBgFx();
+
+    const token = ++renderToken;
+    if (abortCtrl) {
+      try {
+        abortCtrl.abort();
+      } catch (_) { /* ignore */ }
+    }
+    abortCtrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+
     try {
+      await yieldToUI(16);
+      if (token !== renderToken) return;
+
+      const payload = slimInvestigation(investigation);
+      await yieldToUI(0);
+      if (token !== renderToken) return;
+
       const res = await fetch("/api/graph/from-investigation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ investigation: slimInvestigation(investigation) }),
+        body: JSON.stringify({ investigation: payload }),
+        signal: abortCtrl?.signal,
       });
+      if (token !== renderToken) return;
       const data = await res.json();
+      if (token !== renderToken) return;
       if (!res.ok) throw new Error(data.detail || "Erreur serveur");
-      await renderGraph(data.graph, data.cytoscape, { navigate: false });
+
+      await renderGraph(data.graph, data.cytoscape, { token });
+      if (token !== renderToken) return;
+      loadedKey = key;
       window.updateTerminal?.(
         `[GRAPH] ${data.graph.meta?.node_count || 0} nœuds, ${data.graph.meta?.edge_count || 0} liens`
       );
     } catch (err) {
-      setStatus(`Erreur : ${err.message}`, "error");
+      if (err?.name === "AbortError") return;
+      if (token === renderToken) setStatus(`Erreur : ${err.message}`, "error");
+    } finally {
+      if (token === renderToken) busy = false;
     }
+  }
+
+  function assignCirclePositions(nodeElements) {
+    const n = nodeElements.length;
+    if (!n) return;
+    const R = Math.max(100, n * 16);
+    nodeElements.forEach((el, i) => {
+      const a = (2 * Math.PI * i) / Math.max(n, 1) - Math.PI / 2;
+      el.position = { x: Math.cos(a) * R, y: Math.sin(a) * R };
+    });
   }
 
   async function renderGraph(graph, cytoscapeData, opts = {}) {
@@ -149,13 +260,12 @@ const GraphUI = (() => {
       return;
     }
 
+    const token = opts.token || ++renderToken;
     currentGraph = graph;
     const container = document.getElementById("cyGraph");
     if (!container) return;
 
-    const token = ++renderToken;
-    if (opts.navigate) showPanel();
-    await waitForVisible(container);
+    await yieldToUI(0);
     if (token !== renderToken) return;
 
     const rawList = Array.isArray(cytoscapeData?.elements) ? cytoscapeData.elements : [];
@@ -167,7 +277,6 @@ const GraphUI = (() => {
         .map((el) => el.data.id)
     );
 
-    // Fallback si le serveur n'a pas fourni le format Cytoscape
     let rawElements = rawList;
     if (!rawElements.length) {
       rawElements = [];
@@ -198,59 +307,45 @@ const GraphUI = (() => {
       }
     }
 
-    const elements = rawElements.filter((el) => {
-      const d = el?.data;
-      if (!d?.id) return false;
-      if (isEdge(d)) {
-        return nodeIds.has(d.source) && nodeIds.has(d.target);
-      }
-      return true;
-    }).map((el) => {
-      const d = { ...el.data };
-      if (!isEdge(d)) {
-        d.is_root = !!d.is_root;
-        d.color = d.color || TYPE_COLORS[d.type] || TYPE_COLORS.unknown;
-        d.label = d.label || d.id;
-      }
-      return { data: d };
-    });
+    const elements = rawElements
+      .filter((el) => {
+        const d = el?.data;
+        if (!d?.id) return false;
+        if (isEdge(d)) return nodeIds.has(d.source) && nodeIds.has(d.target);
+        return true;
+      })
+      .map((el) => {
+        const d = { ...el.data };
+        if (!isEdge(d)) {
+          d.is_root = !!d.is_root;
+          d.color = d.color || TYPE_COLORS[d.type] || TYPE_COLORS.unknown;
+          d.label = d.label || d.id;
+        }
+        return { data: d };
+      });
 
-    // Cap dur côté client (sécurité anti-freeze)
     const nodesOnly = elements.filter((e) => !isEdge(e.data));
     const edgesOnly = elements.filter((e) => isEdge(e.data));
-    const cappedNodes = nodesOnly.slice(0, 35);
+    const cappedNodes = nodesOnly.slice(0, MAX_CLIENT_NODES);
     const keep = new Set(cappedNodes.map((n) => n.data.id));
     const cappedEdges = edgesOnly.filter(
       (e) => keep.has(e.data.source) && keep.has(e.data.target)
     );
+
+    assignCirclePositions(cappedNodes);
     const finalElements = [...cappedNodes, ...cappedEdges];
+    const nodeCount = cappedNodes.length;
 
-    if (cy) {
-      cy.destroy();
-      cy = null;
-    }
+    destroyCy();
+    await yieldToUI(16);
+    if (token !== renderToken) return;
 
-    // Forcer une taille minimale avant init (évite canvas 0×0)
     if (container.clientHeight < 200) {
       container.style.minHeight = "420px";
       container.style.height = "420px";
     }
 
-    const nodeCount = cappedNodes.length;
-
-    // Layout léger uniquement (cose/breadthfirst freine Firefox)
-    const layoutOpts =
-      nodeCount <= 1
-        ? { name: "grid", animate: false, fit: true, padding: 40 }
-        : {
-            name: "circle",
-            animate: false,
-            fit: true,
-            padding: 48,
-            avoidOverlap: true,
-            spacingFactor: 1.2,
-          };
-
+    // Positions pré-calculées : pas d'algo cose/circle (bloque Firefox)
     cy = cytoscape({
       container,
       elements: finalElements,
@@ -260,17 +355,17 @@ const GraphUI = (() => {
           style: {
             "background-color": "data(color)",
             label: "data(label)",
-            "font-size": "10px",
+            "font-size": "9px",
             color: "#e2e8f0",
             "text-outline-color": "#030508",
             "text-outline-width": 2,
             "text-valign": "bottom",
             "text-halign": "center",
-            "text-margin-y": 6,
+            "text-margin-y": 4,
             "text-wrap": "ellipsis",
-            "text-max-width": "100px",
-            width: 44,
-            height: 44,
+            "text-max-width": "90px",
+            width: 36,
+            height: 36,
             "border-width": 2,
             "border-color": "rgba(255,255,255,0.18)",
           },
@@ -278,44 +373,48 @@ const GraphUI = (() => {
         {
           selector: "node[?is_root]",
           style: {
-            width: 58,
-            height: 58,
+            width: 48,
+            height: 48,
             "border-width": 3,
             "border-color": "#4f83f1",
             "font-weight": "bold",
-            "font-size": "11px",
+            "font-size": "10px",
           },
         },
         {
           selector: "node:selected",
           style: {
             "border-color": "#00e676",
-            "border-width": 4,
+            "border-width": 3,
           },
         },
         {
           selector: "edge",
           style: {
-            width: 2,
-            "line-color": "rgba(79, 131, 241, 0.45)",
-            "target-arrow-color": "rgba(79, 131, 241, 0.65)",
+            width: 1.5,
+            "line-color": "rgba(79, 131, 241, 0.4)",
+            "target-arrow-color": "rgba(79, 131, 241, 0.55)",
             "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            label: "data(label)",
-            "font-size": "8px",
-            color: "#94a3b8",
-            "text-rotation": "autorotate",
-            "text-background-color": "#030508",
-            "text-background-opacity": 0.7,
-            "text-background-padding": 2,
+            "curve-style": "haystack",
+            "haystack-radius": 0.4,
+            label: "",
           },
         },
       ],
-      layout: layoutOpts,
-      wheelSensitivity: 0.25,
-      minZoom: 0.2,
-      maxZoom: 3,
+      layout: { name: "preset", fit: true, padding: 40 },
+      wheelSensitivity: 0.2,
+      minZoom: 0.25,
+      maxZoom: 2.5,
+      pixelRatio: 1,
+      textureOnViewport: true,
+      hideEdgesOnViewport: true,
+      motionBlur: false,
     });
+
+    if (token !== renderToken) {
+      destroyCy();
+      return;
+    }
 
     cy.on("tap", "node", (evt) => {
       showNodeDetail(evt.target.data());
@@ -326,23 +425,19 @@ const GraphUI = (() => {
       if (!d.is_root) pivotNode(d.label, d.type);
     });
 
-    // Resize après affichage du panneau (sinon nœuds empilés / canvas vide)
-    requestAnimationFrame(() => {
-      if (!cy || token !== renderToken) return;
+    await yieldToUI(0);
+    if (token !== renderToken || !cy) return;
+    try {
       cy.resize();
-      cy.fit(undefined, 48);
-      setTimeout(() => {
-        if (!cy || token !== renderToken) return;
-        cy.resize();
-        cy.fit(undefined, 48);
-      }, 80);
-    });
+      cy.fit(undefined, 40);
+    } catch (_) { /* ignore */ }
 
     setMeta(graph);
-    const n = graph.meta?.node_count || nodeCount;
-    const trunc = graph.meta?.truncated
-      ? ` (aperçu — ${graph.meta.entities_total || "?"} entités au total)`
-      : "";
+    const n = Math.min(graph.meta?.node_count || nodeCount, nodeCount);
+    const trunc =
+      graph.meta?.truncated || (nodesOnly.length > MAX_CLIENT_NODES)
+        ? " (aperçu limité)"
+        : "";
     setStatus(n ? `${n} entités reliées${trunc}` : "Aucune entité", n ? "ok" : "idle");
   }
 
@@ -380,6 +475,8 @@ const GraphUI = (() => {
     busy = true;
     setStatus(`Pivot sur ${target}…`, "loading");
     showPanel();
+    pauseBgFx();
+    const token = ++renderToken;
 
     try {
       const res = await fetch("/api/graph/pivot", {
@@ -393,16 +490,18 @@ const GraphUI = (() => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Erreur pivot");
+      if (token !== renderToken) return;
 
       lastInvestigation = data.investigation;
-      await renderGraph(data.graph, data.cytoscape);
+      loadedKey = null;
+      await renderGraph(data.graph, data.cytoscape, { token });
       window.updateTerminal?.(
         `[GRAPH] Pivot ${target} — ${data.graph.meta?.node_count || 0} nœuds`
       );
     } catch (err) {
-      setStatus(`Pivot échoué : ${err.message}`, "error");
+      if (token === renderToken) setStatus(`Pivot échoué : ${err.message}`, "error");
     } finally {
-      busy = false;
+      if (token === renderToken) busy = false;
     }
   }
 
@@ -410,7 +509,7 @@ const GraphUI = (() => {
     // Ne PAS appeler activatePGPanel ici → boucle infinie (Firefox freeze)
     const panel = document.getElementById("panel-graph");
     if (!panel) return;
-    document.querySelectorAll(".panel").forEach((p) => p.classList.add("hidden"));
+    document.querySelectorAll("main.content > .panel").forEach((p) => p.classList.add("hidden"));
     document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
     panel.classList.remove("hidden");
     const btn = document.querySelector('.nav-item[data-target="panel-graph"]');
@@ -422,16 +521,14 @@ const GraphUI = (() => {
       pageSubtitle.textContent =
         btn?.getAttribute("data-subtitle") || "Relations entre entités découvertes";
     }
+    pauseBgFx();
   }
 
   function clearGraph() {
-    renderToken += 1;
-    if (cy) {
-      cy.destroy();
-      cy = null;
-    }
+    suspend();
     currentGraph = null;
     lastInvestigation = null;
+    loadedKey = null;
     const detail = document.getElementById("graphNodeDetail");
     if (detail) {
       detail.innerHTML =
@@ -455,12 +552,16 @@ const GraphUI = (() => {
 
   function exportPng() {
     if (!cy) return;
-    const png = cy.png({ bg: "#030508", full: true, scale: 2 });
-    const a = document.createElement("a");
-    a.href = png;
-    a.download = `osint-graph-${Date.now()}.png`;
-    a.click();
-    window.updateTerminal?.("[GRAPH] Export PNG");
+    try {
+      const png = cy.png({ bg: "#030508", full: true, scale: 1 });
+      const a = document.createElement("a");
+      a.href = png;
+      a.download = `osint-graph-${Date.now()}.png`;
+      a.click();
+      window.updateTerminal?.("[GRAPH] Export PNG");
+    } catch (err) {
+      setStatus(`Export PNG échoué : ${err.message}`, "error");
+    }
   }
 
   function esc(str) {
@@ -470,14 +571,31 @@ const GraphUI = (() => {
     return d.innerHTML;
   }
 
-  return { init, loadFromInvestigation, showPanel, pivotNode };
+  function hasGraph() {
+    return !!(cy && currentGraph);
+  }
+
+  function getLoadedKey() {
+    return loadedKey;
+  }
+
+  return {
+    init,
+    loadFromInvestigation,
+    scheduleLoad,
+    showPanel,
+    pivotNode,
+    suspend,
+    hasGraph,
+    getLoadedKey,
+  };
 })();
 
 document.addEventListener("DOMContentLoaded", () => {
   try {
     GraphUI.init();
   } catch (e) {
-    console.error("[GRAPH]", e);
+    console.error("[GRAPH] init failed", e);
   }
 });
 

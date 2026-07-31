@@ -132,6 +132,14 @@ function initNavigation() {
  const target = btn.getAttribute("data-target");
  if (!target) return;
 
+ const graphPanel = document.getElementById("panel-graph");
+ const wasGraph = graphPanel && !graphPanel.classList.contains("hidden");
+
+ // Quitter le graphe : détruire Cytoscape + relancer les FX (sinon Firefox reste figé)
+ if (wasGraph && target !== "panel-graph") {
+ window.GraphUI?.suspend?.();
+ }
+
  document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
  btn.classList.add("active");
 
@@ -155,18 +163,14 @@ function initNavigation() {
  window.PrivacyUI?.refreshFromLast?.();
  }
  if (target === "panel-graph") {
+ window.PGMatrix?.pause?.();
+ window.FX?.pause?.();
  const inv =
  window.PlaybooksUI?.getLastResult?.() ||
  window.PlaybooksUI?.getLatestHistoryResult?.();
+ // Chargement différé + non bloquant ; pas de rechargement si déjà affiché
  if (inv) {
- // navigate:false — le panneau est déjà affiché ; évite la boucle activatePanel
- setTimeout(() => {
- try {
- window.GraphUI?.loadFromInvestigation?.(inv, { navigate: false });
- } catch (err) {
- console.error("[GRAPH] load failed", err);
- }
- }, 30);
+ window.GraphUI?.scheduleLoad?.(inv, { navigate: false, delayMs: 80 });
  }
  }
  if (target === "panel-timeline") {
