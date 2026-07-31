@@ -862,83 +862,30 @@ async def api_skiptracer(payload: SkiptracerRequest) -> Any:
 
 @app.post("/api/virustotal")
 async def api_virustotal(payload: VirusTotalRequest) -> Any:
-    """Scan avancé via VirusTotal API avec analyse détaillée."""
-    api_key = os.getenv("VIRUSTOTAL_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Clé API VirusTotal non configurée. Ajoutez VIRUSTOTAL_API_KEY dans .env",
-        )
-    
-    query = payload.query.strip()
-    
+    """Scan VirusTotal (URL / IP / domaine / hash) via le wrapper OSINT unifié."""
+
+    def _run() -> dict:
+        from services.osint_tools import run_virustotal
+
+        data = run_virustotal(payload.query.strip())
+        if data.get("unavailable"):
+            raise HTTPException(
+                status_code=503,
+                detail=data.get("error") or "VirusTotal indisponible",
+            )
+        if not data.get("success"):
+            raise HTTPException(
+                status_code=502,
+                detail=data.get("error") or "Erreur VirusTotal",
+            )
+        return data
+
     try:
-        # Détecter le type (URL, IP, domain, hash)
-        if query.startswith("http"):
-            # URL scan
-            url = "https://www.virustotal.com/vtapi/v2/url/scan"
-            params = {"apikey": api_key, "url": query}
-            response = requests.post(url, data=params, timeout=10)
-            response.raise_for_status()
-            scan_data = response.json()
-            
-            # Attendre un peu puis récupérer le rapport
-            import time
-            time.sleep(2)
-            report_url = "https://www.virustotal.com/vtapi/v2/url/report"
-            report_params = {"apikey": api_key, "resource": query}
-            report_response = requests.get(report_url, params=report_params, timeout=10)
-            report_response.raise_for_status()
-            data = report_response.json()
-            
-        elif len(query) == 32 or len(query) == 64:
-            # Hash (MD5 ou SHA256)
-            url = f"https://www.virustotal.com/vtapi/v2/file/report"
-            params = {"apikey": api_key, "resource": query}
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-        elif "." in query and not query.replace(".", "").replace(":", "").isdigit():
-            # Domain
-            url = f"https://www.virustotal.com/vtapi/v2/domain/report"
-            params = {"apikey": api_key, "domain": query}
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-        else:
-            # IP
-            url = f"https://www.virustotal.com/vtapi/v2/ip-address/report"
-            params = {"apikey": api_key, "ip": query}
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-        
-        # Analyse avancée
-        detections = data.get("positives", 0) if isinstance(data, dict) else 0
-        total = data.get("total", 0) if isinstance(data, dict) else 0
-        ratio = (detections / total * 100) if total > 0 else 0
-        
-        # Extraire les scanners qui ont détecté
-        scans = {}
-        if isinstance(data, dict) and "scans" in data:
-            scans = {k: v for k, v in data["scans"].items() if v.get("detected", False)}
-        
-        return {
-            "query": query,
-            "type": "url" if query.startswith("http") else ("hash" if len(query) in [32, 64] else ("domain" if "." in query else "ip")),
-            "data": data,
-            "detections": detections,
-            "total": total,
-            "ratio": round(ratio, 2),
-            "risk_level": "critical" if ratio > 50 else ("high" if ratio > 25 else ("medium" if ratio > 10 else "low")),
-            "detecting_engines": list(scans.keys())[:10],  # Top 10
-            "scan_date": data.get("scan_date") if isinstance(data, dict) else None,
-            "permalink": data.get("permalink") if isinstance(data, dict) else None,
-        }
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"Erreur VirusTotal: {str(e)}")
+        return await asyncio.to_thread(_run)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Erreur VirusTotal: {exc}")
 
 
 @app.post("/api/abuseipdb")

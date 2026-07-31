@@ -532,6 +532,55 @@ def run_virustotal(query: str) -> Dict[str, Any]:
             risk_level = "medium"
         else:
             risk_level = "low"
+    elif query_type == "ip" and isinstance(data, dict):
+        # Rapport IP VT v2 : pas de positives/total — historique d'URLs / samples
+        det_urls = data.get("detected_urls") or []
+        undet_urls = data.get("undetected_urls") or []
+        det_comm = data.get("detected_communicating_samples") or []
+        undet_comm = data.get("undetected_communicating_samples") or []
+        det_dl = data.get("detected_downloaded_samples") or []
+        undet_dl = data.get("undetected_downloaded_samples") or []
+        resolutions = data.get("resolutions") or []
+
+        malicious = len(det_urls) + len(det_comm) + len(det_dl)
+        clean = len(undet_urls) + len(undet_comm) + len(undet_dl)
+        total = malicious + clean
+        detections = malicious
+        ratio = (malicious / total * 100) if total > 0 else 0.0
+
+        as_owner = data.get("as_owner") or data.get("asn")
+        country = data.get("country")
+        if as_owner:
+            indicators.append(f"ASN / owner: {as_owner}")
+        if country:
+            indicators.append(f"Pays: {country}")
+        if resolutions:
+            recent = resolutions[:3]
+            hosts = [r.get("hostname") for r in recent if isinstance(r, dict) and r.get("hostname")]
+            if hosts:
+                indicators.append("Résolutions: " + ", ".join(hosts[:3]))
+        indicators.append(
+            f"URLs malveillantes liées: {len(det_urls)} · samples: {len(det_comm) + len(det_dl)}"
+        )
+
+        # Engines from last detected URLs if present
+        for item in det_urls[:5]:
+            if isinstance(item, dict) and item.get("positives"):
+                indicators.append(
+                    f"URL liée {item.get('url', '')[:60]} → {item.get('positives')}/{item.get('total', '?')}"
+                )
+
+        if detections >= 20 or ratio >= 40:
+            risk_level = "critical"
+        elif detections >= 5 or ratio >= 15:
+            risk_level = "high"
+        elif detections >= 1:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+            if total == 0:
+                total = 1  # éviter 0/0 trompeur → afficher 0/1 « pas de signal »
+                indicators.append("Aucune URL/sample historique sur cette IP dans VirusTotal")
     else:
         detections = data.get("positives", 0) if isinstance(data, dict) else 0
         total = data.get("total", 0) if isinstance(data, dict) else 0
@@ -548,6 +597,18 @@ def run_virustotal(query: str) -> Dict[str, Any]:
         if isinstance(data, dict) and "scans" in data:
             scans = {k: v for k, v in data["scans"].items() if v.get("detected", False)}
 
+    permalink = None
+    if isinstance(data, dict) and data.get("permalink"):
+        permalink = data.get("permalink")
+    elif query_type == "domain":
+        permalink = f"https://www.virustotal.com/gui/domain/{normalized}"
+    elif query_type == "ip":
+        permalink = f"https://www.virustotal.com/gui/ip-address/{normalized}"
+    elif query_type == "url":
+        permalink = f"https://www.virustotal.com/gui/search/{normalized}"
+    elif query_type == "hash":
+        permalink = f"https://www.virustotal.com/gui/file/{normalized}"
+
     return {
         "success": True,
         "source": "virustotal",
@@ -560,9 +621,7 @@ def run_virustotal(query: str) -> Dict[str, Any]:
         "risk_level": risk_level,
         "detecting_engines": list(scans.keys())[:10],
         "scan_date": data.get("scan_date") if isinstance(data, dict) else None,
-        "permalink": data.get("permalink") if isinstance(data, dict) else (
-            f"https://www.virustotal.com/gui/domain/{normalized}" if query_type == "domain" else None
-        ),
+        "permalink": permalink,
         "data": data if isinstance(data, dict) else {},
         "vt_configured": True,
         "indicators": indicators,

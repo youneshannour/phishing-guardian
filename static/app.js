@@ -717,8 +717,9 @@ function renderVirusTotal(data, el) {
  <div class="result-hacking mb-3">
  <div class="text-green-500 font-bold mb-2">&gt; SCAN_RESULTS: ${data.query}</div>
  <div class="text-green-400 text-xs font-share-tech space-y-2">
- <div>SOURCE: <span class="text-green-300 font-bold">${source === "virustotal" ? "VIRUSTOTAL" : "LOCAL HEURISTICS"}</span></div>
+ <div>SOURCE: <span class="text-green-300 font-bold">${source === "virustotal" ? "VIRUSTOTAL" : (source === "local+vt_empty" ? "VT EMPTY → LOCAL" : "LOCAL HEURISTICS")}</span></div>
  <div>TYPE: <span class="text-green-300 font-bold">${(data.type || "unknown").toUpperCase()}</span></div>
+ ${data.original_query && data.original_query !== data.query ? `<div>ORIGINAL: <span class="font-mono">${data.original_query}</span></div>` : ""}
  <div>DETECTIONS: <span class="${detections > 0 ? 'text-red-400' : 'text-green-300'} font-bold text-lg">${detections}/${total}</span></div>
  <div>DETECTION_RATIO: <span class="font-mono font-bold">${ratio}%</span></div>
  <div>RISK_LEVEL: <span class="${riskLevel === 'critical' ? 'text-red-400' : riskLevel === 'high' ? 'text-orange-400' : riskLevel === 'medium' ? 'text-yellow-400' : 'text-green-300'} font-bold">${riskLevel.toUpperCase()}</span></div>
