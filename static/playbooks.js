@@ -8,9 +8,14 @@ const PlaybooksUI = (() => {
  let lastResult = null;
  let suggestTimer = null;
  let loadingInterval = null;
- const HISTORY_KEY = "pg_investigation_history_v2";
- const HISTORY_MAX = 12;
- const LEGACY_HISTORY_KEYS = ["pg_investigation_history"];
+ const HISTORY_KEY = "pg_investigation_history_v3";
+ const HISTORY_MAX = 8;
+ const ALL_HISTORY_KEYS = [
+ "pg_investigation_history",
+ "pg_investigation_history_v2",
+ "pg_investigation_history_v3",
+ ];
+ const SESSION_RESULT_KEY = "pg_last_playbook_result";
 
  const RISK_COLORS = {
  critical: "#ef4444",
@@ -46,20 +51,18 @@ const PlaybooksUI = (() => {
  if (!targetInput || !runBtn) return;
 
  loadPlaybooks();
- purgeLegacyHistory();
- // One-shot : vider l'historique encombrant demandé
- try {
- if (!localStorage.getItem("pg_history_cleared_v1")) {
- clearHistory({ silent: true });
- localStorage.setItem("pg_history_cleared_v1", "1");
- }
- } catch (_) { /* ignore */ }
+ forceClearAllHistory();
  renderHistory();
+ tryRestoreSessionResult();
  document.getElementById("playbookHistory")?.addEventListener("click", onHistoryClick);
  document.getElementById("playbookHistoryClear")?.addEventListener("click", (e) => {
  e.preventDefault();
- clearHistory();
+ e.stopPropagation();
+ forceClearAllHistory();
+ window.updateTerminal?.("Historique récent vidé");
  });
+ // Filet de sécurité : si un vieux script a laissé des entrées, les purger après paint
+ setTimeout(forceClearAllHistory, 0);
 
  targetInput.addEventListener("input", () => {
  clearTimeout(suggestTimer);
@@ -237,8 +240,11 @@ const PlaybooksUI = (() => {
 
  stopLoadingAnimation();
  lastResult = data;
- saveHistory(data);
- renderHistory();
+ try {
+ sessionStorage.setItem(SESSION_RESULT_KEY, JSON.stringify(data));
+ } catch (_) { /* quota */ }
+ // Historique désactivé (encombrement / quota localStorage)
+ forceClearAllHistory();
  renderDashboard(data);
  const asScore = data.synthesis?.attack_surface?.score ?? "N/A";
  window.updateTerminal?.(`Investigation terminée (${data.duration_ms}ms) — surface d'attaque ${asScore}/100`);
@@ -335,6 +341,8 @@ const PlaybooksUI = (() => {
 
  function renderDashboard(data) {
  const el = document.getElementById("playbookResults");
+ if (!el || !data) return;
+ try {
  const synth = data.synthesis || {};
  const risk = synth.overall_risk || "low";
  const riskColor = RISK_COLORS[risk] || RISK_COLORS.low;
@@ -417,6 +425,14 @@ const PlaybooksUI = (() => {
  const end = parseInt(statEl.dataset.count, 10) || 0;
  animateCount(statEl, end);
  });
+ } catch (err) {
+ console.error("[PLAYBOOKS] renderDashboard", err);
+ el.innerHTML = `
+ <div class="pb-empty-state">
+ <h3>Affichage du rapport impossible</h3>
+ <p>${esc(err.message || "Erreur de rendu")}. Relancez l'investigation.</p>
+ </div>`;
+ }
  }
 
  function renderPrivacyGauge(ps) {
@@ -741,73 +757,74 @@ const PlaybooksUI = (() => {
  });
  }
 
- function purgeLegacyHistory() {
- LEGACY_HISTORY_KEYS.forEach((key) => {
+ function forceClearAllHistory() {
+ ALL_HISTORY_KEYS.forEach((key) => {
  try { localStorage.removeItem(key); } catch (_) { /* ignore */ }
  });
+ try {
+ localStorage.removeItem("pg_history_cleared_v1");
+ } catch (_) { /* ignore */ }
+ renderHistory();
+ }
+
+ function purgeLegacyHistory() {
+ forceClearAllHistory();
  }
 
  function clearHistory(opts = {}) {
- try { localStorage.removeItem(HISTORY_KEY); } catch (_) { /* ignore */ }
- purgeLegacyHistory();
- renderHistory();
+ forceClearAllHistory();
  if (!opts.silent) {
  window.updateTerminal?.("Historique récent vidé");
  }
  }
 
  function loadHistory() {
- try {
- return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
- } catch (_) {
+ // Historique persistant désactivé — toujours vide
  return [];
  }
+
+ function saveHistory(_data) {
+ // no-op : évite de remplir localStorage avec d'énormes résultats Sherlock
+ forceClearAllHistory();
  }
 
- function saveHistory(data) {
- const entry = {
- id: data.id || `${Date.now()}`,
- target: data.target,
- playbook_id: data.playbook_id,
- playbook_name: data.playbook_name,
- overall_risk: data.synthesis?.overall_risk || "low",
- saved_at: new Date().toISOString(),
- result: data,
- };
- const list = loadHistory().filter((h) => h.id !== entry.id);
- list.unshift(entry);
- localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX)));
+ function tryRestoreSessionResult() {
+ try {
+ const raw = sessionStorage.getItem(SESSION_RESULT_KEY);
+ if (!raw) return;
+ const data = JSON.parse(raw);
+ if (!data?.target) return;
+ lastResult = data;
+ const targetInput = document.getElementById("playbookTarget");
+ if (targetInput) targetInput.value = data.target || "";
+ selectedId = data.playbook_id || selectedId;
+ renderPlaybookCards();
+ renderDashboard(data);
+ } catch (_) { /* ignore */ }
  }
 
  function renderHistory() {
  const el = document.getElementById("playbookHistory");
  if (!el) return;
- const list = loadHistory();
  const clearBtn = document.getElementById("playbookHistoryClear");
- if (clearBtn) clearBtn.classList.toggle("hidden", !list.length);
- if (!list.length) {
+ if (clearBtn) clearBtn.classList.add("hidden");
  el.innerHTML = `<p class="pb-history-empty" style="font-size:0.75rem;color:var(--text-3);padding:0.5rem 0">Aucune investigation récente.</p>`;
- return;
- }
- el.innerHTML = list.map((h) => `
- <button type="button" class="pb-history-item" data-id="${esc(h.id)}" title="Recharger">
- <span class="pb-history-target">${esc(h.target)}</span>
- <span class="pb-history-meta">${esc(h.playbook_name || h.playbook_id || "")} · ${esc((h.overall_risk || "").toUpperCase())}</span>
- </button>`).join("");
  }
 
  function onHistoryClick(e) {
  const btn = e.target.closest(".pb-history-item[data-id]");
  if (!btn) return;
- const item = loadHistory().find((h) => h.id === btn.dataset.id);
- if (!item?.result) return;
- lastResult = item.result;
+ e.preventDefault();
+ // Plus d'historique persistant — proposer de relancer
+ const target = btn.querySelector(".pb-history-target")?.textContent?.trim();
+ if (target) {
  const targetInput = document.getElementById("playbookTarget");
- if (targetInput) targetInput.value = item.target || "";
- selectedId = item.playbook_id || selectedId;
- renderPlaybookCards();
- renderDashboard(item.result);
- window.updateTerminal?.(`Historique rechargé : ${item.target}`);
+ if (targetInput) {
+ targetInput.value = target;
+ targetInput.dispatchEvent(new Event("input"));
+ }
+ window.updateTerminal?.(`Cible reprise : ${target} — relancez l'investigation`);
+ }
  }
 
  function formatDuration(ms) {
