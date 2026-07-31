@@ -4,6 +4,8 @@
 const InvestigatorAI = (() => {
  let history = [];
  let busy = false;
+ let waitTimer = null;
+ let activeAbort = null;
 
  const RISK_COLORS = {
  critical: "#ef4444",
@@ -11,6 +13,8 @@ const InvestigatorAI = (() => {
  medium: "#f59e0b",
  low: "#22c55e",
  };
+
+ const CHAT_TIMEOUT_MS = 100000;
 
  function init() {
  const form = document.getElementById("aiChatForm");
@@ -70,13 +74,13 @@ const InvestigatorAI = (() => {
  const models = (data.models || []).slice(0, 4).join(", ");
  const modelHint = data.available
  ? `Modèle attendu : <code>${esc(data.configured_model)}</code>${models ? ` — installés : ${esc(models)}` : ""}`
- : "Ollama n'est pas démarré sur ce PC.";
+ : "Ollama n'est pas démarré sur ce serveur.";
  help.innerHTML = `
  <strong>Investigations OSINT : disponibles</strong> même sans Ollama (rapport automatique).
  <span class="ai-ollama-hint">${modelHint}</span>
  <ol class="ai-ollama-steps">
  <li>Installez <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a></li>
- <li>Dans un terminal : <code>ollama pull mistral</code></li>
+ <li>Dans un terminal : <code>ollama pull tinyllama</code> (ou mistral)</li>
  <li>Vérifiez : <code>ollama serve</code> (démarre souvent automatiquement)</li>
  </ol>`;
  }
@@ -86,6 +90,31 @@ const InvestigatorAI = (() => {
  const text = badge.querySelector(".ai-status-text");
  if (text) text.textContent = "Serveur IA indisponible";
  help?.classList.remove("hidden");
+ }
+ }
+
+ function startWaitTicker(el, investigating) {
+ const started = Date.now();
+ const base = investigating
+ ? "Investigation OSINT en cours"
+ : "Génération de la réponse";
+ const tick = () => {
+ const s = Math.floor((Date.now() - started) / 1000);
+ const body = el.querySelector(".ai-msg-body");
+ if (!body) return;
+ body.innerHTML = `<p>${base}… <span class="ai-wait-secs">${s}s</span></p>
+ <p class="ai-wait-hint">${investigating
+ ? "Playbooks + outils OSINT — souvent 30 à 120 s."
+ : "Ollama peut prendre 15 à 60 s selon le modèle."}</p>`;
+ };
+ tick();
+ waitTimer = setInterval(tick, 1000);
+ }
+
+ function stopWaitTicker() {
+ if (waitTimer) {
+ clearInterval(waitTimer);
+ waitTimer = null;
  }
  }
 
@@ -102,17 +131,30 @@ const InvestigatorAI = (() => {
  history.push({ role: "user", content: message });
  if (input) input.value = "";
 
+ const looksLikeInv = /\b(investigu|analys|osint|scan|recherch|vérifi|verifi|check|trace)\b/i.test(message)
+ || /^(?:[^\s@]+@[^\s]+|(?:\d{1,3}\.){3}\d{1,3}|https?:\/\/\S+)$/i.test(message.trim());
+
  const typingEl = appendMessage("assistant", "Analyse en cours…", true);
+ startWaitTicker(typingEl, looksLikeInv);
+
+ const controller = new AbortController();
+ activeAbort = controller;
+ const kill = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
 
  try {
  const res = await fetch("/api/ai/chat", {
  method: "POST",
  headers: { "Content-Type": "application/json" },
- body: JSON.stringify({ message, history: history.slice(-10) }),
+ body: JSON.stringify({ message, history: history.slice(-8) }),
+ signal: controller.signal,
  });
- const data = await res.json();
- if (!res.ok) throw new Error(data.detail || "Erreur serveur");
+ const data = await res.json().catch(() => ({}));
+ if (!res.ok) {
+ const detail = typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`;
+ throw new Error(detail || "Erreur serveur");
+ }
 
+ stopWaitTicker();
  typingEl.remove();
  appendMessage("assistant", data.reply, false, data.ai_powered);
  history.push({ role: "assistant", content: data.reply });
@@ -124,9 +166,19 @@ const InvestigatorAI = (() => {
  window.updateTerminal?.(`[AI] ${message.substring(0, 80)}`);
  }
  } catch (err) {
+ stopWaitTicker();
  typingEl.remove();
- appendMessage("assistant", `Erreur : ${err.message}`);
+ const aborted = err?.name === "AbortError";
+ appendMessage(
+ "assistant",
+ aborted
+ ? "Délai dépassé — Ollama ou l'investigation a pris trop de temps. Réessayez, ou lancez la cible via Playbooks."
+ : `Erreur : ${err.message || err}`
+ );
  } finally {
+ clearTimeout(kill);
+ activeAbort = null;
+ stopWaitTicker();
  busy = false;
  if (sendBtn) sendBtn.classList.remove("running");
  if (input) {

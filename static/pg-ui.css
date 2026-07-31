@@ -905,6 +905,8 @@ button,
 .ai-msg.user { align-self: flex-end; flex-direction: row-reverse; }
 .ai-msg.assistant { align-self: flex-start; }
 .ai-msg.typing .ai-msg-body { opacity: 0.7; font-style: italic; }
+.ai-wait-hint { font-size: 11px; color: var(--text-3); font-style: normal; margin-top: 4px !important; }
+.ai-wait-secs { font-variant-numeric: tabular-nums; color: var(--accent); }
 
 .ai-msg-avatar {
   width: 32px; height: 32px;

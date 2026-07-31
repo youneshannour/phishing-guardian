@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import asyncio
 import os
 from typing import Any, Dict, List, Optional
 
@@ -12,7 +12,9 @@ from services.playbook_engine import playbook_engine
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "tinyllama")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "90"))
+OLLAMA_CHAT_TOKENS = int(os.getenv("OLLAMA_CHAT_TOKENS", "384"))
+OLLAMA_REPORT_TOKENS = int(os.getenv("OLLAMA_REPORT_TOKENS", "768"))
 
 PREFERRED_MODELS = (
     "tinyllama",
@@ -61,7 +63,7 @@ class AIInvestigator:
         ).rstrip("/")
         self.model = model or os.getenv("OLLAMA_MODEL", "tinyllama")
         self.timeout = int(
-            timeout if timeout is not None else os.getenv("OLLAMA_TIMEOUT", "120")
+            timeout if timeout is not None else os.getenv("OLLAMA_TIMEOUT", "90")
         )
 
     def _resolve_model(self, models: List[str]) -> Optional[str]:
@@ -116,12 +118,28 @@ class AIInvestigator:
                 "error": str(exc),
             }
 
+    def _is_tiny_model(self) -> bool:
+        name = (self._effective_model() or "").lower()
+        return any(tag in name for tag in ("tinyllama", "tiny", "phi", "gemma:2b", "1b", "2b"))
+
+    def _system_prompt(self) -> str:
+        if self._is_tiny_model():
+            return (
+                "Tu es Investigator AI (OSINT). Réponds en français, court et concret. "
+                "Ne invente pas de faits."
+            )
+        return SYSTEM_PROMPT
+
     def _generate(self, prompt: str, system: Optional[str] = None) -> Optional[str]:
         payload = {
             "model": self._effective_model(),
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.3, "num_predict": 1024},
+            "keep_alive": "10m",
+            "options": {
+                "temperature": 0.3,
+                "num_predict": OLLAMA_REPORT_TOKENS,
+            },
         }
         if system:
             payload["system"] = system
@@ -133,8 +151,8 @@ class AIInvestigator:
                 timeout=self.timeout,
             )
             resp.raise_for_status()
-            return resp.json().get("response", "").strip()
-        except requests.RequestException:
+            return (resp.json().get("response") or "").strip() or None
+        except (requests.RequestException, ValueError, KeyError):
             return None
 
     def _chat_generate(self, messages: List[Dict[str, str]]) -> Optional[str]:
@@ -145,13 +163,17 @@ class AIInvestigator:
                     "model": self._effective_model(),
                     "messages": messages,
                     "stream": False,
-                    "options": {"temperature": 0.4, "num_predict": 1024},
+                    "keep_alive": "10m",
+                    "options": {
+                        "temperature": 0.4,
+                        "num_predict": OLLAMA_CHAT_TOKENS,
+                    },
                 },
                 timeout=self.timeout,
             )
             resp.raise_for_status()
-            return resp.json().get("message", {}).get("content", "").strip()
-        except requests.RequestException:
+            return (resp.json().get("message", {}) or {}).get("content", "").strip() or None
+        except (requests.RequestException, ValueError, KeyError, TypeError):
             return None
 
     def build_investigation_context(self, result: Dict[str, Any]) -> str:
@@ -225,7 +247,7 @@ class AIInvestigator:
 
     async def summarize_investigation(self, result: Dict[str, Any]) -> Dict[str, Any]:
         context = self.build_investigation_context(result)
-        status = self.check_status()
+        status = await asyncio.to_thread(self.check_status)
 
         if status.get("available") and status.get("model_available"):
             prompt = (
@@ -233,7 +255,9 @@ class AIInvestigator:
                 "en français (Résumé exécutif, Constats clés, Évaluation du risque, Recommandations).\n\n"
                 f"{context}"
             )
-            summary = self._generate(prompt, system=SYSTEM_PROMPT)
+            summary = await asyncio.to_thread(
+                self._generate, prompt, self._system_prompt()
+            )
             if summary:
                 return {
                     "summary": summary,
@@ -315,22 +339,28 @@ class AIInvestigator:
                 "ai_powered": inv.get("ai_powered", False),
             }
 
-        status = self.check_status()
+        status = await asyncio.to_thread(self.check_status)
         if status.get("available") and status.get("model_available"):
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            for item in history[-10:]:
+            messages = [{"role": "system", "content": self._system_prompt()}]
+            for item in history[-6:]:
                 role = item.get("role", "user")
                 if role in ("user", "assistant"):
                     messages.append({"role": role, "content": item.get("content", "")})
             messages.append({"role": "user", "content": message})
 
-            reply = self._chat_generate(messages)
+            reply = await asyncio.to_thread(self._chat_generate, messages)
             if reply:
-                return {"reply": reply, "action": "chat", "ai_powered": True}
+                return {
+                    "reply": reply,
+                    "action": "chat",
+                    "ai_powered": True,
+                    "model": self._effective_model(),
+                }
 
         targets = extract_targets(message)
         reply = (
-            "Investigator AI (mode hors-ligne) — Ollama n'est pas disponible.\n\n"
+            "Investigator AI (mode hors-ligne) — Ollama n'a pas répondu à temps "
+            "ou n'est pas disponible.\n\n"
             "Je peux lancer des investigations OSINT si vous incluez une cible concrète :\n"
             "email, domaine, IP, URL ou pseudo.\n\n"
             "Exemple : *Investigue suspect@domain.com*"

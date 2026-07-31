@@ -139,7 +139,17 @@ def pick_best_target(text: str) -> Optional[str]:
 
 
 def wants_investigation(text: str) -> bool:
-    """Détecte si l'utilisateur demande une investigation OSINT."""
+    """Détecte si l'utilisateur demande une investigation OSINT.
+
+    - Mot-clé d'investigation → oui
+    - Message qui n'est qu'une cible (email/IP/domaine/URL/pseudo) → oui
+    - Phrase conversationnelle contenant une cible au passage → non (chat)
+    """
     if INVESTIGATE_KEYWORDS.search(text):
         return True
-    return bool(extract_targets(text))
+    targets = extract_targets(text)
+    if not targets:
+        return False
+    # Cible seule (éventuellement avec ponctuation) → lancer le playbook
+    stripped = text.strip().strip(".,;:!?\"'")
+    return any(stripped.lower() == t.lower() for t in targets)
