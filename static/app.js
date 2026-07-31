@@ -155,18 +155,18 @@ function initNavigation() {
  window.PrivacyUI?.refreshFromLast?.();
  }
  if (target === "panel-graph") {
- // Afficher le panneau d'abord, charger le graphe ensuite (évite freeze Firefox)
- window.GraphUI?.showPanel?.();
- const inv = window.PlaybooksUI?.getLastResult?.()
- || window.PlaybooksUI?.getLatestHistoryResult?.();
+ const inv =
+ window.PlaybooksUI?.getLastResult?.() ||
+ window.PlaybooksUI?.getLatestHistoryResult?.();
  if (inv) {
+ // navigate:false — le panneau est déjà affiché ; évite la boucle activatePanel
  setTimeout(() => {
  try {
- window.GraphUI?.loadFromInvestigation?.(inv);
+ window.GraphUI?.loadFromInvestigation?.(inv, { navigate: false });
  } catch (err) {
  console.error("[GRAPH] load failed", err);
  }
- }, 50);
+ }, 30);
  }
  }
  if (target === "panel-timeline") {

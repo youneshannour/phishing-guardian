@@ -81,21 +81,60 @@ const GraphUI = (() => {
     });
   }
 
-  async function loadFromInvestigation(investigation) {
+  function slimInvestigation(investigation) {
+    if (!investigation || typeof investigation !== "object") return investigation;
+    const entities = Array.isArray(investigation.entities)
+      ? investigation.entities.slice(0, 40)
+      : [];
+    const steps = (investigation.steps || []).map((step) => {
+      const data = step.data || {};
+      // Ne pas renvoyer des centaines de profils Sherlock au endpoint graphe
+      if (step.plugin_id === "sherlock" && data.profiles) {
+        const entries = Object.entries(data.profiles).slice(0, 12);
+        return {
+          ...step,
+          data: {
+            username: data.username,
+            count: data.count || entries.length,
+            sites_found: (data.sites_found || []).slice(0, 12),
+            profiles: Object.fromEntries(entries),
+          },
+        };
+      }
+      return {
+        plugin_id: step.plugin_id,
+        plugin_name: step.plugin_name,
+        status: step.status,
+        data: data,
+      };
+    });
+    return {
+      id: investigation.id,
+      target: investigation.target,
+      target_type: investigation.target_type,
+      playbook_name: investigation.playbook_name,
+      playbook_id: investigation.playbook_id,
+      entities,
+      steps,
+    };
+  }
+
+  async function loadFromInvestigation(investigation, opts = {}) {
     if (!investigation) return;
+    const navigate = opts.navigate !== false;
     lastInvestigation = investigation;
     setStatus("Construction du graphe…", "loading");
-    showPanel();
+    if (navigate) showPanel();
 
     try {
       const res = await fetch("/api/graph/from-investigation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ investigation }),
+        body: JSON.stringify({ investigation: slimInvestigation(investigation) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Erreur serveur");
-      await renderGraph(data.graph, data.cytoscape);
+      await renderGraph(data.graph, data.cytoscape, { navigate: false });
       window.updateTerminal?.(
         `[GRAPH] ${data.graph.meta?.node_count || 0} nœuds, ${data.graph.meta?.edge_count || 0} liens`
       );
@@ -104,7 +143,7 @@ const GraphUI = (() => {
     }
   }
 
-  async function renderGraph(graph, cytoscapeData) {
+  async function renderGraph(graph, cytoscapeData, opts = {}) {
     if (typeof cytoscape === "undefined") {
       setStatus("Cytoscape.js indisponible", "error");
       return;
@@ -115,7 +154,7 @@ const GraphUI = (() => {
     if (!container) return;
 
     const token = ++renderToken;
-    showPanel();
+    if (opts.navigate) showPanel();
     await waitForVisible(container);
     if (token !== renderToken) return;
 
@@ -176,6 +215,16 @@ const GraphUI = (() => {
       return { data: d };
     });
 
+    // Cap dur côté client (sécurité anti-freeze)
+    const nodesOnly = elements.filter((e) => !isEdge(e.data));
+    const edgesOnly = elements.filter((e) => isEdge(e.data));
+    const cappedNodes = nodesOnly.slice(0, 35);
+    const keep = new Set(cappedNodes.map((n) => n.data.id));
+    const cappedEdges = edgesOnly.filter(
+      (e) => keep.has(e.data.source) && keep.has(e.data.target)
+    );
+    const finalElements = [...cappedNodes, ...cappedEdges];
+
     if (cy) {
       cy.destroy();
       cy = null;
@@ -187,11 +236,24 @@ const GraphUI = (() => {
       container.style.height = "420px";
     }
 
-    const nodeCount = elements.filter((e) => !isEdge(e.data)).length;
+    const nodeCount = cappedNodes.length;
+
+    // Layout léger uniquement (cose/breadthfirst freine Firefox)
+    const layoutOpts =
+      nodeCount <= 1
+        ? { name: "grid", animate: false, fit: true, padding: 40 }
+        : {
+            name: "circle",
+            animate: false,
+            fit: true,
+            padding: 48,
+            avoidOverlap: true,
+            spacingFactor: 1.2,
+          };
 
     cy = cytoscape({
       container,
-      elements,
+      elements: finalElements,
       style: [
         {
           selector: "node",
@@ -249,26 +311,7 @@ const GraphUI = (() => {
           },
         },
       ],
-      layout: {
-        name: nodeCount > 20 ? "breadthfirst" : "cose",
-        animate: false,
-        padding: 48,
-        directed: true,
-        spacingFactor: nodeCount > 20 ? 1.15 : 1.35,
-        avoidOverlap: true,
-        randomize: nodeCount <= 20,
-        componentSpacing: 60,
-        nestingFactor: 1.1,
-        gravity: 1,
-        numIter: nodeCount > 20 ? 400 : 900,
-        initialTemp: 120,
-        coolingFactor: 0.95,
-        minTemp: 1.0,
-        nodeRepulsion: () => 6000,
-        idealEdgeLength: () => 90,
-        edgeElasticity: () => 80,
-        nodeOverlap: 20,
-      },
+      layout: layoutOpts,
       wheelSensitivity: 0.25,
       minZoom: 0.2,
       maxZoom: 3,
@@ -364,7 +407,21 @@ const GraphUI = (() => {
   }
 
   function showPanel() {
-    window.activatePGPanel?.("panel-graph");
+    // Ne PAS appeler activatePGPanel ici → boucle infinie (Firefox freeze)
+    const panel = document.getElementById("panel-graph");
+    if (!panel) return;
+    document.querySelectorAll(".panel").forEach((p) => p.classList.add("hidden"));
+    document.querySelectorAll(".nav-item").forEach((b) => b.classList.remove("active"));
+    panel.classList.remove("hidden");
+    const btn = document.querySelector('.nav-item[data-target="panel-graph"]');
+    btn?.classList.add("active");
+    const pageTitle = document.getElementById("pageTitle");
+    const pageSubtitle = document.getElementById("pageSubtitle");
+    if (pageTitle) pageTitle.textContent = btn?.getAttribute("data-title") || "Graphe OSINT";
+    if (pageSubtitle) {
+      pageSubtitle.textContent =
+        btn?.getAttribute("data-subtitle") || "Relations entre entités découvertes";
+    }
   }
 
   function clearGraph() {

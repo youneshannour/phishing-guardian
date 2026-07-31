@@ -103,8 +103,7 @@ const PlaybooksUI = (() => {
  e.stopPropagation();
  switch (btn.id) {
  case "pbViewGraph":
- window.GraphUI?.loadFromInvestigation(lastResult);
- window.GraphUI?.showPanel?.();
+ window.GraphUI?.loadFromInvestigation(lastResult, { navigate: true });
  break;
  case "pbViewTimeline":
  window.TimelineUI?.loadFromInvestigation(lastResult);
