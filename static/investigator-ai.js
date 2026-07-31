@@ -131,8 +131,7 @@ const InvestigatorAI = (() => {
  history.push({ role: "user", content: message });
  if (input) input.value = "";
 
- const looksLikeInv = /\b(investigu|analys|osint|scan|recherch|vérifi|verifi|check|trace)\b/i.test(message)
- || /^(?:[^\s@]+@[^\s]+|(?:\d{1,3}\.){3}\d{1,3}|https?:\/\/\S+)$/i.test(message.trim());
+ const looksLikeInv = /\b(investigu|analys|osint|scan|recherch|vérifi|verifi|check|trace)\b/i.test(message);
 
  const typingEl = appendMessage("assistant", "Analyse en cours…", true);
  startWaitTicker(typingEl, looksLikeInv);
@@ -169,12 +168,21 @@ const InvestigatorAI = (() => {
  stopWaitTicker();
  typingEl.remove();
  const aborted = err?.name === "AbortError";
- appendMessage(
- "assistant",
- aborted
- ? "Délai dépassé — Ollama ou l'investigation a pris trop de temps. Réessayez, ou lancez la cible via Playbooks."
- : `Erreur : ${err.message || err}`
- );
+ const msg = String(err?.message || err || "");
+ let text;
+ if (aborted) {
+ text = "Délai dépassé côté navigateur. Pour une IP/domaine, utilisez plutôt **Playbooks**, ou écrivez *Investigue 8.8.8.8* puis patientez.";
+ } else if (/\b504\b/.test(msg) || /gateway/i.test(msg)) {
+ text = "Erreur **HTTP 504** (timeout Nginx) : l’investigation a pris trop de temps.\n\n"
+ + "Solution : lancez la cible via le panneau **Playbooks**, ou écrivez "
+ + "*Investigue …* et attendez jusqu’à 2 min. Sur le serveur, augmentez "
+ + "`proxy_read_timeout` Nginx à 180s.";
+ } else if (/\b502\b|\b503\b/.test(msg)) {
+ text = `Erreur serveur (${msg}). Vérifiez que le service phishing_guardian tourne.`;
+ } else {
+ text = `Erreur : ${msg}`;
+ }
+ appendMessage("assistant", text);
  } finally {
  clearTimeout(kill);
  activeAbort = null;

@@ -29,8 +29,12 @@ class TestNLTargetExtractor(unittest.TestCase):
     def test_wants_investigation_keyword(self):
         self.assertTrue(wants_investigation("Peux-tu investiguer cette cible ?"))
 
-    def test_wants_investigation_with_target(self):
-        self.assertTrue(wants_investigation("john@company.com"))
+    def test_wants_investigation_with_target_needs_keyword(self):
+        # Cible seule ne lance plus l'investigation (évite HTTP 504)
+        self.assertFalse(wants_investigation("john@company.com"))
+        self.assertFalse(wants_investigation("8.8.8.8"))
+        self.assertTrue(wants_investigation("Investigue 8.8.8.8"))
+        self.assertTrue(wants_investigation("OSINT sur john@company.com"))
 
     def test_extract_username_from_pseudo_phrase(self):
         targets = extract_targets("Recherche le pseudo johndoe sur les réseaux")

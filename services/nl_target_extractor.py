@@ -139,17 +139,10 @@ def pick_best_target(text: str) -> Optional[str]:
 
 
 def wants_investigation(text: str) -> bool:
-    """Détecte si l'utilisateur demande une investigation OSINT.
+    """Détecte si l'utilisateur demande explicitement une investigation OSINT.
 
-    - Mot-clé d'investigation → oui
-    - Message qui n'est qu'une cible (email/IP/domaine/URL/pseudo) → oui
-    - Phrase conversationnelle contenant une cible au passage → non (chat)
+    Une cible seule (ex. 8.8.8.8) ne lance plus le playbook automatiquement :
+    ça provoquait des HTTP 504 (Nginx) car l'investigation dépasse souvent 60 s.
+    Il faut un mot-clé : Investigue / Analyse / OSINT / Scan…
     """
-    if INVESTIGATE_KEYWORDS.search(text):
-        return True
-    targets = extract_targets(text)
-    if not targets:
-        return False
-    # Cible seule (éventuellement avec ponctuation) → lancer le playbook
-    stripped = text.strip().strip(".,;:!?\"'")
-    return any(stripped.lower() == t.lower() for t in targets)
+    return bool(INVESTIGATE_KEYWORDS.search(text))

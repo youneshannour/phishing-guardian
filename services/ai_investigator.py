@@ -41,6 +41,25 @@ Règles :
 """
 
 
+KNOWN_CONTEXT = {
+    "8.8.8.8": (
+        "**8.8.8.8** est le DNS public de **Google** (Google Public DNS).\n\n"
+        "Ce n’est ni un VPN, ni un proxy, ni un service d’anonymat.\n"
+        "Usage typique : résoudre des noms de domaine en adresses IP.\n\n"
+        "Pour une investigation OSINT complète (Shodan, AbuseIPDB, VirusTotal…), écrivez :\n"
+        "*Investigue 8.8.8.8*"
+    ),
+    "8.8.4.4": (
+        "**8.8.4.4** est le DNS secondaire public de **Google**.\n\n"
+        "Pour une investigation OSINT : *Investigue 8.8.4.4*"
+    ),
+    "1.1.1.1": (
+        "**1.1.1.1** est le DNS public de **Cloudflare**.\n\n"
+        "Pour une investigation OSINT : *Investigue 1.1.1.1*"
+    ),
+}
+
+
 class AIInvestigator:
     def __init__(
         self,
@@ -249,10 +268,21 @@ class AIInvestigator:
         context = self.build_investigation_context(result)
         status = await asyncio.to_thread(self.check_status)
 
+        # tinyllama invente souvent des faits → rapport déterministe préféré
+        if self._is_tiny_model() or not (
+            status.get("available") and status.get("model_available")
+        ):
+            return {
+                "summary": self.fallback_summary(result),
+                "ai_powered": False,
+                "model": None,
+            }
+
         if status.get("available") and status.get("model_available"):
             prompt = (
                 "Analyse les résultats OSINT suivants et rédige un rapport de renseignement structuré "
                 "en français (Résumé exécutif, Constats clés, Évaluation du risque, Recommandations).\n\n"
+                "N'invente aucune information absente du contexte.\n\n"
                 f"{context}"
             )
             summary = await asyncio.to_thread(
@@ -318,6 +348,32 @@ class AIInvestigator:
             "model": summary_data.get("model"),
         }
 
+    def _quick_target_reply(self, message: str) -> Optional[Dict[str, Any]]:
+        """Réponse rapide pour une cible seule — évite Ollama + évite playbook long."""
+        stripped = message.strip().strip(".,;:!?\"'")
+        known = KNOWN_CONTEXT.get(stripped)
+        if known:
+            return {"reply": known, "action": "chat", "ai_powered": False}
+
+        targets = extract_targets(message)
+        if not targets:
+            return None
+        if stripped.lower() not in {t.lower() for t in targets}:
+            return None
+
+        target = pick_best_target(message) or targets[0]
+        entity_type = resolve_entity_type(target)
+        playbook = suggest_playbook_id(entity_type)
+        reply = (
+            f"Cible détectée : `{target}` (type **{entity_type.value}**).\n\n"
+            "Pour lancer l’investigation OSINT (playbooks + outils), écrivez par exemple :\n"
+            f"*Investigue {target}*\n\n"
+            f"Playbook suggéré : `{playbook}`.\n"
+            "Astuce : vous pouvez aussi utiliser le panneau **Playbooks** "
+            "(plus fiable si l’investigation est longue)."
+        )
+        return {"reply": reply, "action": "clarify", "ai_powered": False, "target": target}
+
     async def chat(
         self,
         message: str,
@@ -339,8 +395,12 @@ class AIInvestigator:
                 "ai_powered": inv.get("ai_powered", False),
             }
 
+        quick = self._quick_target_reply(message)
+        if quick:
+            return quick
+
         status = await asyncio.to_thread(self.check_status)
-        if status.get("available") and status.get("model_available"):
+        if status.get("available") and status.get("model_available") and not self._is_tiny_model():
             messages = [{"role": "system", "content": self._system_prompt()}]
             for item in history[-6:]:
                 role = item.get("role", "user")
@@ -359,11 +419,13 @@ class AIInvestigator:
 
         targets = extract_targets(message)
         reply = (
-            "Investigator AI (mode hors-ligne) — Ollama n'a pas répondu à temps "
-            "ou n'est pas disponible.\n\n"
-            "Je peux lancer des investigations OSINT si vous incluez une cible concrète :\n"
-            "email, domaine, IP, URL ou pseudo.\n\n"
-            "Exemple : *Investigue suspect@domain.com*"
+            "Investigator AI — pour une investigation OSINT, précisez un mot-clé "
+            "(Investigue / Analyse / OSINT) + une cible.\n\n"
+            "Exemples :\n"
+            "• *Investigue 8.8.8.8*\n"
+            "• *Analyse suspect@domain.com*\n"
+            "• *OSINT sur le pseudo johndoe*\n\n"
+            "Sinon utilisez le panneau **Playbooks** (recommandé pour les scans longs)."
         )
         if targets:
             reply += f"\n\nCibles détectées : {', '.join(targets)}"
